@@ -24,6 +24,9 @@
 #include "wil/cppwinrt.h"
 #include "wil/cppwinrt_helpers.h"
 
+/// <summary>
+/// Prints formatted output to the console.
+/// </summary>
 template <typename ... Args>
 static void Print(char const* const format, Args ... args) noexcept
 {
