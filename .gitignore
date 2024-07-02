@@ -33,21 +33,19 @@
 
 # Media
 *.mp4
+*.wav
+*.mpa
 
 # Ignore our build output folder
-/build
-/Apps/build
-/packages
-
-# Ignore lib/bin/obj in output
-#lib
+build
+packages
 bin
 obj
 *.obj
 Debug
 
 # Ignore
-*.wav
+
 
 # Ignore Visual studio files
 *.vs
