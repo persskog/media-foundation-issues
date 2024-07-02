@@ -34,4 +34,22 @@
 # Media
 *.mp4
 
-.vs
+# Ignore our build output folder
+/build
+/Apps/build
+/packages
+
+# Ignore lib/bin/obj in output
+#lib
+bin
+obj
+*.obj
+Debug
+
+# Ignore
+*.wav
+
+# Ignore Visual studio files
+*.vs
+*.suo
+*.user
