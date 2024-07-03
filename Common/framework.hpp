@@ -24,6 +24,8 @@
 #include "wil/cppwinrt.h"
 #include "wil/cppwinrt_helpers.h"
 
+#include <iostream>
+
 /// <summary>
 /// Prints formatted output to the console.
 /// </summary>

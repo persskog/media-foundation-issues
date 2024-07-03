@@ -73,7 +73,7 @@ winrt::com_ptr<IMFSourceReader> CreateSourceReader(const winrt::com_ptr<IMFActiv
 
 std::wstring GetProcessDirectory()
 {
-    unsigned long length = ::GetCurrentDirectoryW(0, nullptr);
+    auto length = ::GetCurrentDirectoryW(0, nullptr);
     std::wstring dir(static_cast<size_t>(length + 1), L'?');
     ::GetCurrentDirectoryW(length, dir.data());
     return dir;
