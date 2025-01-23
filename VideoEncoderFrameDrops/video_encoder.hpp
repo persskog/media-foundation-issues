@@ -3,7 +3,7 @@
 
 struct VideoEncoder : winrt::implements<VideoEncoder, IMFCaptureEngineOnSampleCallback2>
 {
-    static winrt::com_ptr<VideoEncoder> Create();
+    static winrt::com_ptr<VideoEncoder> Create(IMFActivate* videoDevice, ::IUnknown* dxgiManager);
 
     // IMFCaptureEngineOnSampleCallback2
     HRESULT __stdcall OnSample(IMFSample* sample) noexcept final;

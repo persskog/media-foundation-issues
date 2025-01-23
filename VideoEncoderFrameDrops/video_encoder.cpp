@@ -26,16 +26,15 @@ static winrt::com_ptr<IMFAttributes> CreateCaptureEngineSettings(::IUnknown* dxg
     winrt::com_ptr<IMFAttributes> attr;
     THROW_IF_FAILED(::MFCreateAttributes(attr.put(), 6));
     WINRT_VERIFY_(S_OK, attr->SetUINT32(MF_CAPTURE_ENGINE_USE_VIDEO_DEVICE_ONLY, TRUE));
-    WINRT_VERIFY_(S_OK, attr->SetUINT32(MF_CAPTURE_ENGINE_ENABLE_CAMERA_STREAMSTATE_NOTIFICATION, 1));
     WINRT_VERIFY_(S_OK, attr->SetUnknown(MF_CAPTURE_ENGINE_D3D_MANAGER, dxgiManager));
     WINRT_VERIFY_(S_OK, attr->SetUINT32(MF_CAPTURE_ENGINE_RECORD_SINK_VIDEO_MAX_UNPROCESSED_SAMPLES, 8));
     WINRT_VERIFY_(S_OK, attr->SetUINT32(MF_CAPTURE_ENGINE_RECORD_SINK_VIDEO_MAX_PROCESSED_SAMPLES,   8));
     return attr;
 }
 
-struct CaptureEngineCb : winrt::implements<CaptureEngineCb, IMFCaptureEngineOnEventCallback>
+struct Callback : winrt::implements<Callback, IMFCaptureEngineOnEventCallback>
 {
-    explicit CaptureEngineCb(VideoEncoder* encoder) noexcept : m_encoder{ encoder->get_weak() } {}
+    explicit Callback(VideoEncoder* encoder) noexcept : m_encoder{ encoder->get_weak() } {}
 
     HRESULT __stdcall OnEvent(IMFMediaEvent* event) noexcept final
     {
@@ -55,9 +54,16 @@ struct CaptureEngineCb : winrt::implements<CaptureEngineCb, IMFCaptureEngineOnEv
     VideoEncoder
 */
 
-winrt::com_ptr<VideoEncoder> VideoEncoder::Create()
+winrt::com_ptr<VideoEncoder> VideoEncoder::Create(IMFActivate* videoDevice, ::IUnknown* dxgiManager)
 {
-    return winrt::com_ptr<VideoEncoder>();
+    auto factory = winrt::create_instance<IMFCaptureEngineClassFactory>(CLSID_MFCaptureEngineClassFactory);
+    winrt::com_ptr<IMFCaptureEngine> engine;
+    THROW_IF_FAILED(factory->CreateInstance(CLSID_MFCaptureEngine, winrt::guid_of<IMFCaptureEngine>(), engine.put_void()));
+    auto venc = winrt::make_self<VideoEncoder>();
+    auto cb = winrt::make<Callback>(venc.get());
+    auto settings = CreateCaptureEngineSettings(dxgiManager);
+    THROW_IF_FAILED(engine->Initialize(cb.get(), settings.get(), nullptr, videoDevice));
+    return venc;
 }
 
 HRESULT __stdcall VideoEncoder::OnSample(IMFSample* sample) noexcept
