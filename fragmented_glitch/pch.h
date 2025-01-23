@@ -15,7 +15,6 @@
 #include <mfapi.h>
 #include <mfreadwrite.h>
 #include <mferror.h>
-#include <mfcaptureengine.h>
 #include <iostream>
 #include "wil/resource.h"
 
@@ -27,5 +26,10 @@ static void PrintLine(char const* const format, Args ... args) noexcept
 {
     char buffer[1024] = {};
     ::sprintf_s(buffer, std::size(buffer), format, args ...);
+#ifdef _DEBUG
+    ::OutputDebugStringA(buffer);
+    ::OutputDebugStringA("\n");
+#else
     ::printf_s("%s\n", buffer);
+#endif
 }
