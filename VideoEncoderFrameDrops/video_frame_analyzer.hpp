@@ -3,7 +3,7 @@
 
 struct IMFSample;
 
-#define VV_VIDEO_FRAME_ANALYZER_PRINT
+#define VV_ENABLE_VIDEO_FRAME_ANALYZER_LOG
 
 struct VideoFrameAnalyzer
 {
@@ -11,7 +11,7 @@ struct VideoFrameAnalyzer
     void Initialize(IMFMediaType* type);
     void Reset();
 
-#ifdef VV_VIDEO_FRAME_ANALYZER_PRINT
+#ifdef VV_ENABLE_VIDEO_FRAME_ANALYZER_LOG
     template <typename ... Args>
     static void PrintLine(char const* const format, Args ... args) noexcept
     {

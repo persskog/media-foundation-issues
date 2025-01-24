@@ -1,14 +1,14 @@
 #include "pch.h"
 #include "video_frame_analyzer.hpp"
 
-#ifdef VV_VIDEO_FRAME_ANALYZER_PRINT
+#ifdef VV_ENABLE_VIDEO_FRAME_ANALYZER_LOG
 
-#define VV_VIDEO_FRAME_ANALYZER_LOG(fmt, ...) \
+#define VFA_LOG(fmt, ...) \
     VideoFrameAnalyzer::PrintLine(fmt, __VA_ARGS__)
 
 #else
 
-#define VV_VIDEO_FRAME_ANALYZER_LOG(fmt, ...)
+#define VFA_LOG(fmt, ...)
 
 #endif
 
@@ -40,7 +40,7 @@ winrt::TimeSpan VideoFrameAnalyzer::Analyze(IMFSample* frame)
         lostFramesSinceLastValid = CalculateDroppenFrames(deltaDts, duration);
         m_accumDroppenFrames += lostFramesSinceLastValid;
 
-        VV_VIDEO_FRAME_ANALYZER_LOG("[Discontinuity] %lld (%lldms) ~%u lost since last valid (total lost %u)",
+        VFA_LOG("[Discontinuity] %lld (%lldms) ~%u lost since last valid (total lost %u)",
             deltaDts.count(),
             duration_cast<milliseconds>(deltaDts).count(),
             lostFramesSinceLastValid,
@@ -66,7 +66,7 @@ void VideoFrameAnalyzer::Initialize(IMFMediaType* type)
     LOG_IF_FAILED(::MFFrameRateToAverageTimePerFrame(num, den, &avgTimePerFrame));
     m_avgTimePerFrame = winrt::TimeSpan{ avgTimePerFrame };
     const auto fps = num / static_cast<double>(den);
-    VV_VIDEO_FRAME_ANALYZER_LOG("Video frame rate: %.2ffps (%lld)", fps, m_avgTimePerFrame);
+    VFA_LOG("Video frame rate: %.2ffps (%lld)", fps, m_avgTimePerFrame);
 }
 
 void VideoFrameAnalyzer::Reset()
@@ -97,7 +97,7 @@ void VideoFrameAnalyzer::OnFirstFrame(IMFSample* frame)
     m_delayUntilFirstFrame = delay;
     m_accumDroppenFrames = 0;
     m_accumDuration += duration;
-    VV_VIDEO_FRAME_ANALYZER_LOG("[First frame] %lld, %lldms delay since captured", 
+    VFA_LOG("[First frame] %lld, %lldms delay since captured",
         dts.count(), 
         AsMilliseconds(delay));
 }
@@ -128,7 +128,7 @@ void VideoFrameAnalyzer::ValidateFrameCounter(winrt::TimeSpan frameDuration) con
 
     if (actual_frames > 1.0)
     {
-        VV_VIDEO_FRAME_ANALYZER_LOG(
+        VFA_LOG(
             "%u <-> %.2lf, %.2lf | clock vs. accum: %lldms (%lld) | fc=%u vs. fl=%u",
             counter,
             num_frames_clock_based,
@@ -153,7 +153,7 @@ winrt::TimeSpan VideoFrameAnalyzer::CheckForIncreasedFrameDelay(winrt::TimeSpan 
         const auto amount = delta - m_avgTimePerFrame;
         if (amount > 10ms)
         {
-            VV_VIDEO_FRAME_ANALYZER_LOG(
+            VFA_LOG(
                 "[%u] High delay between frames %lldms", 
                 m_frameCounter,
                 AsMilliseconds(amount));
