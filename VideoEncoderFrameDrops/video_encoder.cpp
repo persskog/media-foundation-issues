@@ -141,7 +141,12 @@ HRESULT __stdcall VideoEncoder::OnSample(IMFSample* sample) noexcept
     {
         return S_OK;
     }
-    auto count = m_analyzer.Analyze(sample);
+
+    auto lost = m_analyzer.Analyze(sample);
+    if (lost != winrt::TimeSpan::zero())
+    {
+        int g0 = 0;
+    }
 
     return S_OK;
 }

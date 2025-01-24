@@ -1,7 +1,18 @@
 #include "pch.h"
 #include "video_frame_analyzer.hpp"
 
-int32_t VideoFrameAnalyzer::Analyze(IMFSample* frame)
+#ifdef VV_VIDEO_FRAME_ANALYZER_PRINT
+
+#define VV_VIDEO_FRAME_ANALYZER_LOG(fmt, ...) \
+    VideoFrameAnalyzer::PrintLine(fmt, __VA_ARGS__)
+
+#else
+
+#define VV_VIDEO_FRAME_ANALYZER_LOG(fmt, ...)
+
+#endif
+
+winrt::TimeSpan VideoFrameAnalyzer::Analyze(IMFSample* frame)
 {
     using namespace std::chrono;
     WINRT_ASSERT(frame);
@@ -10,7 +21,7 @@ int32_t VideoFrameAnalyzer::Analyze(IMFSample* frame)
     if (IsInvalidTime(m_prevDts))
     {
         OnFirstFrame(frame);
-        return 0;
+        return {};
     }
 
     uint32_t discontinuity{};
@@ -19,28 +30,43 @@ int32_t VideoFrameAnalyzer::Analyze(IMFSample* frame)
     const auto duration = GetSampleDuration(frame);
     const auto dts = GetDts(frame);
     // Should be around average time per frame for the current frame rate
-    const auto delta = dts - m_prevDts;
+    const auto deltaDts = dts - m_prevDts;
+    m_accumDuration += duration;
+    m_prevDts = dts;
 
     if (discontinuity)
     {
-        lostFramesSinceLastValid = CalculateLostFrames(delta, duration);
-        m_accumLostFrames += lostFramesSinceLastValid;
-        PrintLine("[Discontinuity] %lld (%lldms) ~%u lost since last valid (total lost %u)",
-            delta.count(),
-            duration_cast<milliseconds>(delta).count(),
+        // We can have some dropped frames by the encoder
+        lostFramesSinceLastValid = CalculateDroppenFrames(deltaDts, duration);
+        m_accumDroppenFrames += lostFramesSinceLastValid;
+
+        VV_VIDEO_FRAME_ANALYZER_LOG("[Discontinuity] %lld (%lldms) ~%u lost since last valid (total lost %u)",
+            deltaDts.count(),
+            duration_cast<milliseconds>(deltaDts).count(),
             lostFramesSinceLastValid,
-            m_accumLostFrames);
+            m_accumDroppenFrames);
     }
     else
     {
-        auto delay = CheckForIncreasedFrameDelay(delta);
-        m_accumDuration += delay;
+        auto delay = CheckForIncreasedFrameDelay(deltaDts);
+        // TODO: What should be done here?
     }
 
-    m_accumDuration += duration;
     ValidateFrameCounter(duration);
-    m_prevDts = dts;
-    return lostFramesSinceLastValid;
+
+    // The actual time missing in the stream
+    return lostFramesSinceLastValid * duration;
+}
+
+void VideoFrameAnalyzer::Initialize(IMFMediaType* type)
+{
+    uint32_t num = {}, den = {};
+    LOG_IF_FAILED(::MFGetAttributeRatio(type, MF_MT_FRAME_RATE, &num, &den));
+    uint64_t avgTimePerFrame{};
+    LOG_IF_FAILED(::MFFrameRateToAverageTimePerFrame(num, den, &avgTimePerFrame));
+    m_avgTimePerFrame = winrt::TimeSpan{ avgTimePerFrame };
+    const auto fps = num / static_cast<double>(den);
+    VV_VIDEO_FRAME_ANALYZER_LOG("Video frame rate: %.2ffps (%lld)", fps, m_avgTimePerFrame);
 }
 
 void VideoFrameAnalyzer::Reset()
@@ -49,7 +75,7 @@ void VideoFrameAnalyzer::Reset()
     m_clockStart = InvalidTime;
     m_delayUntilFirstFrame = InvalidTime;
     m_frameCounter = {};
-    m_approxLostFrames = {};
+    m_approxDroppedFrames = {};
 }
 
 void VideoFrameAnalyzer::OnFirstFrame(IMFSample* frame)
@@ -60,16 +86,20 @@ void VideoFrameAnalyzer::OnFirstFrame(IMFSample* frame)
     const auto duration = GetSampleDuration(frame);
     const auto delay = now - dts;
 
+#ifdef _DEBUG
     uint32_t keyframe{};
     frame->GetUINT32(MFSampleExtension_CleanPoint, &keyframe);
     WINRT_ASSERT(keyframe);
+#endif // _DEBUG
 
     m_clockStart = now - delay;
     m_prevDts = dts;
     m_delayUntilFirstFrame = delay;
-    m_accumLostFrames = 0;
+    m_accumDroppenFrames = 0;
     m_accumDuration += duration;
-    PrintLine("[First frame] %lld, %lldms delay since captured", dts.count(), AsMilliseconds(delay));
+    VV_VIDEO_FRAME_ANALYZER_LOG("[First frame] %lld, %lldms delay since captured", 
+        dts.count(), 
+        AsMilliseconds(delay));
 }
 
 winrt::TimeSpan VideoFrameAnalyzer::ElapsedTimeSinceFirstFrame() const
@@ -77,46 +107,40 @@ winrt::TimeSpan VideoFrameAnalyzer::ElapsedTimeSinceFirstFrame() const
     return Now() - m_clockStart;
 }
 
-bool VideoFrameAnalyzer::IsDtsDeltaOk(winrt::TimeSpan delta, winrt::TimeSpan frameDuration)
-{
-    const auto abs = std::chrono::abs(delta - frameDuration);
-    return abs <= DeltaLimit;
-}
-
 void VideoFrameAnalyzer::ValidateFrameCounter(winrt::TimeSpan frameDuration) const
 {
     using namespace std::chrono;
+
     const auto elapsed_clock = ElapsedTimeSinceFirstFrame();
     const auto diff_duration = elapsed_clock - m_accumDuration;
-    /*   PrintLine("[%lld] : %lld (%lld ms)",
-           elapsed_clock.count(),
-           m_accumDuration.count(),
-           duration_cast<milliseconds>(diff_duration).count());*/
 
+    // Based upon the clock this should represent an approximation of
+    // number of frames received duration current period
     const auto num_frames_clock_based = elapsed_clock.count() / static_cast<double>(frameDuration.count());
+    //const uint32_t approx_clock_based = static_cast<uint32_t>(num_frames_clock_based);
+
+    // This is the 
     const auto num_frames_duration_based = m_accumDuration.count() / static_cast<double>(frameDuration.count());
-    const uint32_t counter = m_frameCounter + m_accumLostFrames;
-    const uint32_t approx = static_cast<uint32_t>(num_frames_clock_based);
-    if (approx > counter)
+    //const uint32_t approx_duration_based = static_cast<uint32_t>(num_frames_duration_based);
+
+    const uint32_t counter = m_frameCounter + m_accumDroppenFrames;
+    const auto actual_frames = abs(num_frames_clock_based - num_frames_duration_based);
+
+    if (actual_frames > 1.0)
     {
-        PrintLine("%u <-> %.2lf | clock vs. accum: %lldms (%lld)",
+        VV_VIDEO_FRAME_ANALYZER_LOG(
+            "%u <-> %.2lf, %.2lf | clock vs. accum: %lldms (%lld) | fc=%u vs. fl=%u",
             counter,
             num_frames_clock_based,
+            num_frames_duration_based,
             AsMilliseconds(diff_duration),
-            frameDuration);
+            frameDuration,
+            m_frameCounter,
+            m_accumDroppenFrames);
     }
 }
 
-void VideoFrameAnalyzer::Initialize(IMFMediaType* type)
-{
-    uint32_t num = {}, den = {};
-    LOG_IF_FAILED(::MFGetAttributeRatio(type, MF_MT_FRAME_RATE, &num, &den));
-    uint64_t avgTimePerFrame{};
-    LOG_IF_FAILED(::MFFrameRateToAverageTimePerFrame(num, den, &avgTimePerFrame));
-    m_avgTimePerFrame = winrt::TimeSpan{ avgTimePerFrame };
-}
-
-winrt::TimeSpan VideoFrameAnalyzer::CheckForIncreasedFrameDelay(winrt::TimeSpan delta)
+winrt::TimeSpan VideoFrameAnalyzer::CheckForIncreasedFrameDelay(winrt::TimeSpan delta) const
 {
     using namespace std::chrono_literals;
 
@@ -124,30 +148,25 @@ winrt::TimeSpan VideoFrameAnalyzer::CheckForIncreasedFrameDelay(winrt::TimeSpan 
     // Webcameras can have increased it's shutter time and therefore
     // the capture time increases
     // Not really lost
-    const auto delay = delta - m_avgTimePerFrame;
-    const auto ms = AsMilliseconds(delay);
     if (delta > m_avgTimePerFrame)
     {
-        if (delay > 5ms)
+        const auto amount = delta - m_avgTimePerFrame;
+        if (amount > 10ms)
         {
-            PrintLine("[%u] High delay between frames %lldms", m_frameCounter, ms);
+            VV_VIDEO_FRAME_ANALYZER_LOG(
+                "[%u] High delay between frames %lldms", 
+                m_frameCounter,
+                AsMilliseconds(amount));
         }
-        return delay;
-    }
-    else
-    {
-        if (ms != 0)
-        {
-            PrintLine("[%u] %lldms", m_frameCounter, ms);
-        }
+        return amount;
     }
     return {};
 }
 
-uint32_t VideoFrameAnalyzer::CalculateLostFrames(winrt::TimeSpan delta, winrt::TimeSpan frameDuration)
+uint32_t VideoFrameAnalyzer::CalculateDroppenFrames(winrt::TimeSpan delta, winrt::TimeSpan frameDuration)
 {
-    auto lost = delta.count() / static_cast<double>(frameDuration.count());
-    auto count = std::round(lost);
+    const auto lost = delta.count() / static_cast<double>(frameDuration.count());
+    const auto count = std::round(lost);
     // Do not include current frame, hence -1
     return static_cast<uint32_t>(count) - 1;
 }
