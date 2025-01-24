@@ -141,13 +141,10 @@ HRESULT __stdcall VideoEncoder::OnSample(IMFSample* sample) noexcept
     {
         return S_OK;
     }
-
-    auto lost = m_analyzer.Analyze(sample);
-    if (lost != winrt::TimeSpan::zero())
-    {
-        int g0 = 0;
-    }
-
+    DWORD flags{};
+    DWORD queue{};
+    m_recording->GetParameters(&flags, &queue);
+    ::MFPutWorkItem2(queue, 0, m_recording.get(), sample);
     return S_OK;
 }
 
@@ -198,6 +195,7 @@ void VideoEncoder::StartEncoder()
 void VideoEncoder::StopEncoder()
 {
     LOG_IF_FAILED(m_engine->StopRecord(FALSE, TRUE));
+    LOG_IF_FAILED(m_recording->Done());
 }
 
 void VideoEncoder::TakePhoto()
@@ -320,7 +318,6 @@ HRESULT VideoEncoder::OnSinkPrepared(HRESULT status)
     var.ulVal = 0;
     RETURN_IF_FAILED(codec->SetValue(&CODECAPI_AVEncMPVDefaultBPictureCount, &var));
 
-
     LOG_IF_FAILED(codec->GetValue(&CODECAPI_AVEncMPVGOPSize, &var));
     if (var.ulVal != m_gopLength)
     {
@@ -328,9 +325,8 @@ HRESULT VideoEncoder::OnSinkPrepared(HRESULT status)
         LOG_IF_FAILED(codec->SetValue(&CODECAPI_AVEncMPVGOPSize, &var));
     }
 
-    //CODECAPI_AVEncMPVGOPSize
-    //AVEncMPVDefaultBPictureCount
-    m_analyzer.Initialize(type.get());
+    m_recording = winrt::make_self<Recording>();
+    m_recording->Initialize(type.get());
     SignalStatus(S_OK);
     return S_OK;
 }

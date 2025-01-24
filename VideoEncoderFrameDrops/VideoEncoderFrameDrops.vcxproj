@@ -104,6 +104,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
+    <ClInclude Include="recording.hpp" />
     <ClInclude Include="video_encoder.hpp" />
     <ClInclude Include="video_frame_analyzer.hpp" />
   </ItemGroup>
@@ -112,6 +113,7 @@
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="recording.cpp" />
     <ClCompile Include="video_encoder.cpp" />
     <ClCompile Include="video_frame_analyzer.cpp" />
   </ItemGroup>

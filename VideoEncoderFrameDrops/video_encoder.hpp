@@ -1,5 +1,6 @@
 #pragma once
 #include "video_frame_analyzer.hpp"
+#include "recording.hpp"
 
 struct VideoEncoder : winrt::implements<VideoEncoder, IMFCaptureEngineOnSampleCallback2>
 {
@@ -29,7 +30,8 @@ private:
     HRESULT OnSinkPrepared(HRESULT status);
 
 private:
-    VideoFrameAnalyzer               m_analyzer;
+    winrt::com_ptr<Recording>       m_recording;
+    //VideoFrameAnalyzer               m_analyzer;
     winrt::com_ptr<IMFCaptureEngine> m_engine;
     winrt::com_ptr<IMFTransform>     m_encoderMFT;
     winrt::handle                    m_ready;

@@ -22,6 +22,10 @@ struct VideoFrameAnalyzer
     }
 #endif
 
+    static winrt::TimeSpan GetSampleTime(IMFSample* sample);
+    static winrt::TimeSpan GetSampleDuration(IMFSample* sample);
+    static winrt::TimeSpan GetDts(IMFSample* sample);
+
 private:
     void OnFirstFrame(IMFSample* frame);
     winrt::TimeSpan ElapsedTimeSinceFirstFrame() const;
@@ -30,9 +34,6 @@ private:
     winrt::TimeSpan CheckForIncreasedFrameDelay(winrt::TimeSpan delta) const;
 
     static uint32_t CalculateDroppenFrames(winrt::TimeSpan delta, winrt::TimeSpan frameDuration);
-    static winrt::TimeSpan GetSampleTime(IMFSample* sample);
-    static winrt::TimeSpan GetSampleDuration(IMFSample* sample);
-    static winrt::TimeSpan GetDts(IMFSample* sample);
     static winrt::TimeSpan Now();
     static int64_t AsMilliseconds(winrt::TimeSpan ts);
     static bool IsInvalidTime(winrt::TimeSpan ts);
