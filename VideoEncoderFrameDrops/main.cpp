@@ -128,7 +128,7 @@ int main()
         auto videoDevice = ShowAvailableVideoDevices();
         auto audioDevice = ShowAvailableAudioDevices();
         auto encoder = VideoEncoder::Create(videoDevice.get(), d3ddevice.get());
-        const auto RECORDING_TIME = 1 * 120s;
+        const auto RECORDING_TIME = 10 * 60s;
         RunEncoderAsync(encoder, audioDevice, RECORDING_TIME).get();
     }
     catch (...)

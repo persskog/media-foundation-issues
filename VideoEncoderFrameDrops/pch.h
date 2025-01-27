@@ -68,7 +68,7 @@ static void PrintLine(char const* const format, Args ... args) noexcept
 {
     char buffer[1024] = {};
     ::sprintf_s(buffer, std::size(buffer), format, args ...);
-#ifdef OUTPUT_TO_DEBUG
+#ifdef _DEBUG
     ::OutputDebugStringA(buffer);
     ::OutputDebugStringA("\n");
 #else

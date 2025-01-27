@@ -13,7 +13,7 @@ struct RecordingFile : winrt::implements<RecordingFile, IMFAsyncCallback>
         IMFMediaType*   audioType,
         RecordingFile** file);
 
-    RecordingFile(IMFSinkWriter* writer, DWORD audioStream, DWORD videoStream);
+    RecordingFile(IMFSinkWriter* writer, DWORD workQueue, DWORD audioStream, DWORD videoStream);
     ~RecordingFile();
     HRESULT __stdcall GetParameters(DWORD* flags, DWORD* queue) noexcept final;
     HRESULT __stdcall Invoke(IMFAsyncResult* result) noexcept final;
