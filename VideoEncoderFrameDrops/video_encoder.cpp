@@ -27,8 +27,8 @@ static winrt::com_ptr<IMFAttributes> CreateCaptureEngineSettings(::IUnknown* dxg
     THROW_IF_FAILED(::MFCreateAttributes(attr.put(), 6));
     WINRT_VERIFY_(S_OK, attr->SetUINT32(MF_CAPTURE_ENGINE_USE_VIDEO_DEVICE_ONLY, TRUE));
     WINRT_VERIFY_(S_OK, attr->SetUnknown(MF_CAPTURE_ENGINE_D3D_MANAGER, dxgiManager));
-    WINRT_VERIFY_(S_OK, attr->SetUINT32(MF_CAPTURE_ENGINE_RECORD_SINK_VIDEO_MAX_UNPROCESSED_SAMPLES, 1));
-    WINRT_VERIFY_(S_OK, attr->SetUINT32(MF_CAPTURE_ENGINE_RECORD_SINK_VIDEO_MAX_PROCESSED_SAMPLES,   1));
+    WINRT_VERIFY_(S_OK, attr->SetUINT32(MF_CAPTURE_ENGINE_RECORD_SINK_VIDEO_MAX_UNPROCESSED_SAMPLES, 16));
+    WINRT_VERIFY_(S_OK, attr->SetUINT32(MF_CAPTURE_ENGINE_RECORD_SINK_VIDEO_MAX_PROCESSED_SAMPLES,   16));
     return attr;
 }
 
@@ -78,6 +78,29 @@ static HRESULT CreateMediaTypeAndEncoderParameters(IMFMediaType*   deviceType,
     (*params)->SetUINT32(MF_LOW_LATENCY, TRUE);
     (*params)->SetUINT32(CODECAPI_AVEncMPVGOPSize, gopLength);
     return S_OK;
+}
+
+static auto CopySample(IMFSample* frame)
+{
+    DWORD length{};
+    frame->GetTotalLength(&length);
+
+    winrt::com_ptr<IMFMediaBuffer> buffer;
+    winrt::com_ptr<IMFSample> frame2;
+    ::MFCreateMemoryBuffer(length, buffer.put());
+    ::MFCreateSample(frame2.put());
+
+    frame->CopyToBuffer(buffer.get());
+    frame->CopyAllItems(frame2.get());
+
+    int64_t timestamp{};
+    int64_t duration{};
+    frame->GetSampleTime(&timestamp);
+    frame->GetSampleDuration(&duration);
+    frame2->SetSampleTime(timestamp);
+    frame2->SetSampleDuration(duration);
+    frame2->AddBuffer(buffer.get());
+    return frame2;
 }
 
 struct Callback : winrt::implements<Callback, IMFCaptureEngineOnEventCallback>
@@ -287,9 +310,7 @@ HRESULT VideoEncoder::OnInitialized(HRESULT status)
     winrt::com_ptr<IMFMediaType> encodingType;
     winrt::com_ptr<IMFAttributes> encoderSettings;
     RETURN_IF_FAILED(CreateMediaTypeAndEncoderParameters(deviceType.get(), encodingType.put(), encoderSettings.put()));
-
-    encoderSettings->GetUINT32(CODECAPI_AVEncMPVGOPSize, &m_gopLength);
-
+    RETURN_IF_FAILED(encoderSettings->GetUINT32(CODECAPI_AVEncMPVGOPSize, &m_gopLength));
 
     auto sink = GetRecordSink();
     RETURN_IF_FAILED(sink->AddStream(RecordSourceStream, encodingType.get(), nullptr, &sinkStream));

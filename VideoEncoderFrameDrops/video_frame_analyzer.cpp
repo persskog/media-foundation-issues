@@ -18,6 +18,8 @@ winrt::TimeSpan VideoFrameAnalyzer::Analyze(IMFSample* frame)
     WINRT_ASSERT(frame);
 
     ++m_frameCounter;
+    const auto elapsedSinceFirstFrame = ElapsedTimeSinceFirstFrame();
+
     if (IsInvalidTime(m_prevDts))
     {
         OnFirstFrame(frame);
@@ -34,25 +36,25 @@ winrt::TimeSpan VideoFrameAnalyzer::Analyze(IMFSample* frame)
     m_accumDuration += duration;
     m_prevDts = dts;
 
-    if (discontinuity)
-    {
-        // We can have some dropped frames by the encoder
-        lostFramesSinceLastValid = CalculateDroppenFrames(deltaDts, duration);
-        m_accumDroppenFrames += lostFramesSinceLastValid;
+    //if (discontinuity)
+    //{
+    //    // We can have some dropped frames by the encoder
+    //    lostFramesSinceLastValid = CalculateDroppenFrames(deltaDts, duration);
+    //    m_accumDroppenFrames += lostFramesSinceLastValid;
 
-        VFA_LOG("[Discontinuity] %lld (%lldms) ~%u lost since last valid (total lost %u)",
-            deltaDts.count(),
-            duration_cast<milliseconds>(deltaDts).count(),
-            lostFramesSinceLastValid,
-            m_accumDroppenFrames);
-    }
-    else
-    {
-        auto delay = CheckForIncreasedFrameDelay(deltaDts);
-        // TODO: What should be done here?
-    }
+    //    VFA_LOG("[Discontinuity] %lld (%lldms) ~%u lost since last valid (total lost %u)",
+    //        deltaDts.count(),
+    //        duration_cast<milliseconds>(deltaDts).count(),
+    //        lostFramesSinceLastValid,
+    //        m_accumDroppenFrames);
+    //}
+    //else
+    //{
+    //    auto delay = CheckForIncreasedFrameDelay(deltaDts);
+    //    // TODO: What should be done here?
+    //}
 
-    ValidateFrameCounter(duration);
+    ValidateFrameCounter(elapsedSinceFirstFrame,duration);
 
     // The actual time missing in the stream
     return lostFramesSinceLastValid * duration;
@@ -107,26 +109,34 @@ winrt::TimeSpan VideoFrameAnalyzer::ElapsedTimeSinceFirstFrame() const
     return Now() - m_clockStart;
 }
 
-void VideoFrameAnalyzer::ValidateFrameCounter(winrt::TimeSpan frameDuration) const
+void VideoFrameAnalyzer::ValidateFrameCounter(winrt::TimeSpan elapsedSinceFirstFrame, winrt::TimeSpan frameDuration) const
 {
     using namespace std::chrono;
 
-    const auto elapsed_clock = ElapsedTimeSinceFirstFrame();
-    const auto diff_duration = elapsed_clock - m_accumDuration;
+    const auto diff_duration = elapsedSinceFirstFrame - m_accumDuration;
 
     // Based upon the clock this should represent an approximation of
     // number of frames received duration current period
-    const auto num_frames_clock_based = elapsed_clock.count() / static_cast<double>(frameDuration.count());
-    //const uint32_t approx_clock_based = static_cast<uint32_t>(num_frames_clock_based);
-
-    // This is the 
+    const auto num_frames_clock_based = elapsedSinceFirstFrame.count() / static_cast<double>(frameDuration.count());
+    // This is based on accumelated duration, it should match the frame counter
     const auto num_frames_duration_based = m_accumDuration.count() / static_cast<double>(frameDuration.count());
-    //const uint32_t approx_duration_based = static_cast<uint32_t>(num_frames_duration_based);
+
+    const auto frames_diff = num_frames_duration_based - num_frames_clock_based;
 
     const uint32_t counter = m_frameCounter + m_accumDroppenFrames;
     const auto actual_frames = abs(num_frames_clock_based - num_frames_duration_based);
 
-    if (actual_frames > 1.0)
+    if (abs(frames_diff) > 1.0)
+    {
+        VFA_LOG("frame %u: [%.2lf, %.2lf] %.2lf",
+            counter,
+            num_frames_clock_based,
+            num_frames_duration_based,
+            frames_diff);
+    }
+
+    
+  /*  if (actual_frames > 1.0)
     {
         VFA_LOG(
             "%u <-> %.2lf, %.2lf | clock vs. accum: %lldms (%lld) | fc=%u vs. fl=%u",
@@ -137,7 +147,7 @@ void VideoFrameAnalyzer::ValidateFrameCounter(winrt::TimeSpan frameDuration) con
             frameDuration,
             m_frameCounter,
             m_accumDroppenFrames);
-    }
+    }*/
 }
 
 winrt::TimeSpan VideoFrameAnalyzer::CheckForIncreasedFrameDelay(winrt::TimeSpan delta) const

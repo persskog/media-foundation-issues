@@ -29,7 +29,7 @@ struct VideoFrameAnalyzer
 private:
     void OnFirstFrame(IMFSample* frame);
     winrt::TimeSpan ElapsedTimeSinceFirstFrame() const;
-    void ValidateFrameCounter(winrt::TimeSpan frameDuration) const;
+    void ValidateFrameCounter(winrt::TimeSpan elapsedSinceFirstFrame, winrt::TimeSpan frameDuration) const;
     
     winrt::TimeSpan CheckForIncreasedFrameDelay(winrt::TimeSpan delta) const;
 
