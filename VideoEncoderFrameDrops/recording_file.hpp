@@ -1,8 +1,6 @@
 /********************************************************************
 *
-* Copyright (c) 2024-2024 Distributed Medical. All rights reserved.
-*
-* Description: 
+* Description:
 *
 * Author: Carl Persskog
 *
