@@ -1,9 +1,18 @@
+/********************************************************************
+*
+* Copyright (c) 2024-2024 Distributed Medical. All rights reserved.
+*
+* Description:
+*
+* Author: Carl Persskog
+*
+********************************************************************/
 #pragma once
+#define VV_ENABLE_VIDEO_FRAME_ANALYZER_LOG
 #include "winrt/Windows.Foundation.h"
 
+// Forward declare
 struct IMFSample;
-
-#define VV_ENABLE_VIDEO_FRAME_ANALYZER_LOG
 
 struct VideoFrameAnalyzer
 {
@@ -50,7 +59,6 @@ private:
     winrt::TimeSpan m_accumDuration{};
     winrt::TimeSpan m_delayUntilFirstFrame{ InvalidTime };
     uint32_t        m_frameCounter{};
-
 #ifdef VV_ENABLE_VIDEO_FRAME_ANALYZER_LOG
     uint32_t        m_accumDroppenFrames{};
 #endif

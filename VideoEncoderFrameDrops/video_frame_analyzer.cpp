@@ -2,14 +2,10 @@
 #include "video_frame_analyzer.hpp"
 
 #ifdef VV_ENABLE_VIDEO_FRAME_ANALYZER_LOG
-
 #define VFA_LOG(fmt, ...) \
     VideoFrameAnalyzer::PrintLine(fmt, __VA_ARGS__)
-
 #else
-
 #define VFA_LOG(fmt, ...)
-
 #endif
 
 winrt::TimeSpan VideoFrameAnalyzer::Analyze(IMFSample* frame)

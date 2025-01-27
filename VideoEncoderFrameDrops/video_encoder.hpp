@@ -1,6 +1,6 @@
 #pragma once
 #include "video_frame_analyzer.hpp"
-#include "recording.hpp"
+#include "recording_file.hpp"
 
 class AudioDevice;
 

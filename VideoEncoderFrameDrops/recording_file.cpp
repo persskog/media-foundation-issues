@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "recording.hpp"
+#include "recording_file.hpp"
 
 RecordingFile::RecordingFile(IMFSinkWriter* writer, DWORD workQueue, DWORD audioStream, DWORD videoStream)
     : m_workQueue{ workQueue }

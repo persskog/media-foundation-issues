@@ -24,7 +24,7 @@
     <ClInclude Include="video_frame_analyzer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="recording.hpp">
+    <ClInclude Include="recording_file.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="audio_device.hpp">
@@ -44,7 +44,7 @@
     <ClCompile Include="video_frame_analyzer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="recording.cpp">
+    <ClCompile Include="recording_file.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="audio_device.cpp">
