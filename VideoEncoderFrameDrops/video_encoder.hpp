@@ -35,7 +35,7 @@ private:
     HRESULT OnSinkPrepared(HRESULT status);
 
 private:
-    winrt::com_ptr<Recording>        m_recording;
+    winrt::com_ptr<RecordingFile>        m_recording;
     winrt::com_ptr<IMFCaptureEngine> m_engine;
     winrt::com_ptr<IMFTransform>     m_encoderMFT;
     winrt::handle                    m_ready;

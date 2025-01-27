@@ -227,15 +227,17 @@ void VideoEncoder::PrepareOutputFile(AudioDevice* audioDevice)
     winrt::com_ptr<IMFMediaType> audioType;
 
     THROW_IF_FAILED(sink->GetOutputMediaType(0, videoType.put()));
-    m_recording = winrt::make_self<Recording>();
-
     if (audioDevice)
     {
         audioDevice->GetOutputType(audioType.put());
-        audioDevice->SetDestination(m_recording.try_as<IMFAsyncCallback>().get());
     }
-
-    m_recording->Initialize(videoType.get(), audioType.get());
+    winrt::com_ptr<RecordingFile> file;
+    THROW_IF_FAILED(RecordingFile::Create(L"fmpeg_recording.mp4", videoType.get(), audioType.get(), file.put()));
+    m_recording = file;
+    if (audioDevice)
+    {
+        audioDevice->SetDestination(file.get());
+    }
 }
 
 void VideoEncoder::StartEncoder(AudioDevice* audioDevice)
@@ -255,7 +257,7 @@ void VideoEncoder::StopEncoder(AudioDevice* audioDevice)
         audioDevice->StopCapture();
     }
     LOG_IF_FAILED(m_engine->StopRecord(FALSE, TRUE));
-    LOG_IF_FAILED(m_recording->Done());
+    LOG_IF_FAILED(m_recording->Finalize());
     LOG_IF_FAILED(m_engine->StopPreview());
 }
 

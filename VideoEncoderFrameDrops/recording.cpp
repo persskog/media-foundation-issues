@@ -1,39 +1,25 @@
 #include "pch.h"
 #include "recording.hpp"
 
-HRESULT __stdcall Recording::GetParameters(DWORD* flags, DWORD* queue) noexcept
+RecordingFile::RecordingFile(IMFSinkWriter* writer, DWORD audioStream, DWORD videoStream)
+    : m_audioStream{ audioStream }
+    , m_videoStream{ videoStream }
 {
-    *flags = 0;
-    *queue = MFASYNC_CALLBACK_QUEUE_STANDARD;
-    return S_OK;
+    m_writer.copy_from(writer);
+    THROW_IF_FAILED(::MFAllocateSerialWorkQueue(MFASYNC_CALLBACK_QUEUE_MULTITHREADED, &m_workQueue));
 }
 
-HRESULT __stdcall Recording::Invoke(IMFAsyncResult* result) noexcept
+RecordingFile::~RecordingFile()
 {
-    winrt::com_ptr<IMFSample> sample;
-    result->GetStateNoAddRef()->QueryInterface(sample.put());
-    if (sample)
+    WINRT_VERIFY_(S_OK, ::MFUnlockWorkQueue(m_workQueue));
+}
+
+HRESULT RecordingFile::Create(std::wstring filePath, IMFMediaType* videoType, IMFMediaType* audioType, RecordingFile** file)
+{
+    if (filePath.empty() || !videoType)
     {
-        uint32_t isAudio{};
-        sample->GetUINT32(VidiView_AudioSample, &isAudio);
-        if (!isAudio)
-        {
-            Write(sample.get());
-        }
-        else
-        {
-            if (m_audioVideoSyncPoint >= winrt::TimeSpan::zero())
-            {
-                WriteAudio(sample.get());
-            }
-        }
+        return E_INVALIDARG;
     }
-
-    return S_OK;
-}
-
-HRESULT Recording::Initialize(IMFMediaType* videoType, IMFMediaType* audioType)
-{
     winrt::com_ptr<IMFAttributes> attr;
     RETURN_IF_FAILED(::MFCreateAttributes(attr.put(), 7));
     attr->SetUINT32(MF_LOW_LATENCY, TRUE);
@@ -42,85 +28,170 @@ HRESULT Recording::Initialize(IMFMediaType* videoType, IMFMediaType* audioType)
     attr->SetString(MF_READWRITE_MMCSS_CLASS, L"Capture");
     attr->SetString(MF_READWRITE_MMCSS_CLASS_AUDIO, L"Audio");
 
-    RETURN_IF_FAILED(::MFCreateSinkWriterFromURL(L"recording.mp4", nullptr, attr.get(), m_writer.put()));
+    winrt::com_ptr<IMFSinkWriter> writer;
+    DWORD audioStream{ InvalidStream };
+    DWORD videoStream{ InvalidStream };
+    RETURN_IF_FAILED(::MFCreateSinkWriterFromURL(filePath.data(), nullptr, attr.get(), writer.put()));
     if (audioType)
     {
         winrt::com_ptr<IMFMediaType> aac;
         RETURN_IF_FAILED(::MFCreateMediaType(aac.put()));
-        WINRT_VERIFY_(S_OK, aac->SetGUID(MF_MT_MAJOR_TYPE,        MFMediaType_Audio));
-        WINRT_VERIFY_(S_OK, aac->SetGUID(MF_MT_SUBTYPE,           MFAudioFormat_AAC));
-        WINRT_VERIFY_(S_OK, aac->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE,         16u));
-        WINRT_VERIFY_(S_OK, aac->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 24000u));
-        WINRT_VERIFY_(S_OK, aac->SetUINT32(MF_MT_AAC_PAYLOAD_TYPE,              0x0));
-        CopyAttribute(MF_MT_AUDIO_NUM_CHANNELS, audioType,                 aac.get());
-        CopyAttribute(MF_MT_AUDIO_SAMPLES_PER_SECOND, audioType,           aac.get());
-        RETURN_IF_FAILED(m_writer->AddStream(aac.get(), &m_audioStream));
-        RETURN_IF_FAILED(m_writer->SetInputMediaType(m_audioStream, audioType, nullptr));
+        aac->SetGUID(MF_MT_MAJOR_TYPE,        MFMediaType_Audio);
+        aac->SetGUID(MF_MT_SUBTYPE,           MFAudioFormat_AAC);
+        aac->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE,         16u);
+        aac->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 24000u);
+        aac->SetUINT32(MF_MT_AAC_PAYLOAD_TYPE,              0x0);
+        CopyAttribute(MF_MT_AUDIO_NUM_CHANNELS, audioType, aac.get());
+        CopyAttribute(MF_MT_AUDIO_SAMPLES_PER_SECOND, audioType, aac.get());
+        RETURN_IF_FAILED(writer->AddStream(aac.get(), &audioStream));
+        RETURN_IF_FAILED(writer->SetInputMediaType(audioStream, audioType, nullptr));
     }
-    RETURN_IF_FAILED(m_writer->AddStream(videoType, &m_videoStream));
-    m_analyzer.Initialize(videoType);
-    m_analyzer.Reset();
-    RETURN_IF_FAILED(m_writer->BeginWriting());
+    RETURN_IF_FAILED(writer->AddStream(videoType, &videoStream));
+    auto instance = winrt::make_self<RecordingFile>(writer.get(), audioStream, videoStream);
+    RETURN_IF_FAILED(instance->Prepare(videoType));
+    *file = instance.detach();
     return S_OK;
 }
 
-HRESULT Recording::Done()
+HRESULT __stdcall RecordingFile::GetParameters(DWORD* flags, DWORD* queue) noexcept
 {
-    m_done.store(true);
+    *flags = 0;
+    *queue = m_workQueue;
+    return S_OK;
+}
+
+HRESULT __stdcall RecordingFile::Invoke(IMFAsyncResult* result) noexcept
+{
+    auto state = result->GetStateNoAddRef();
+    if (!state)
+    {
+        return S_OK;
+    }
+
+    try
+    {
+        winrt::com_ptr<IMFSample> sample;
+        if (SUCCEEDED(state->QueryInterface(sample.put())))
+        {
+            uint32_t isAudio{};
+            sample->GetUINT32(VidiView_AudioSample, &isAudio);
+            if (isAudio)
+            {
+                if (HasAudioVideoSyncPoint())
+                {
+                    WriteAudio(sample.get());
+                }
+            }
+            else
+            {
+                WriteVideo(sample.get());
+            }
+        }
+    }
+    catch (...)
+    {
+        LOG_CAUGHT_EXCEPTION();
+    }
+    return S_OK;
+}
+
+HRESULT RecordingFile::Prepare(IMFMediaType* videoType)
+{
+    // After this, the file is ready to accept video and audio data
+    m_videoAnalyzer.Initialize(videoType);
+    return m_writer->BeginWriting();
+}
+
+HRESULT RecordingFile::Finalize() const
+{
     return m_writer->Finalize();
 }
 
-void Recording::Write(IMFSample* frame)
+void RecordingFile::GetStatistics(MF_SINK_WRITER_STATISTICS* videoStats,
+                                  MF_SINK_WRITER_STATISTICS* audioStats) const
 {
-    using namespace std::chrono;
-    using namespace std::chrono_literals;
-
-    auto missing = m_analyzer.Analyze(frame);
-    if (missing > winrt::TimeSpan::zero())
+    if (videoStats)
     {
-        m_writer->SendStreamTick(0, m_videoTime.count());
-        m_videoTime += missing;
+        GetStatistics(m_videoStream, videoStats);
+    }
+    if (audioStats)
+    {
+        GetStatistics(m_audioStream, audioStats);
+    }
+}
+
+void RecordingFile::WriteVideo(IMFSample* video)
+{
+    const auto missing = m_videoAnalyzer.Analyze(video);
+    if (ReceivedFirstKeyFrame())
+    {
+        if (missing > winrt::TimeSpan::zero())
+        {
+            // Frames has been dropped by the encoder
+            SendStreamTick(m_videoStream, m_videoTime);
+            m_videoTime += missing;
+        }
     }
     else
     {
-        if (m_videoTime < winrt::TimeSpan::zero())
+        if (!WaitForFirstKeyFrame(video))
         {
-            m_audioVideoSyncPoint = m_analyzer.GetPrevDts();
+            return;
         }
     }
-
-    WriteVideo(frame);
+    WINRT_VERIFY_(S_OK, video->SetSampleTime(m_videoTime.count()));
+    m_videoTime += WriteInternal(video, m_videoStream);
 }
 
-void Recording::WriteAudio(IMFSample* audio)
+void RecordingFile::WriteAudio(IMFSample* audio)
 {
-    if (m_audioTime < winrt::TimeSpan::zero())
+    if (FirstAudioSample())
     {
         auto dts = VideoFrameAnalyzer::GetDts(audio);
+        WINRT_ASSERT(dts >= m_audioVideoSyncPoint);
         auto offset = dts - m_audioVideoSyncPoint;
-        m_writer->SendStreamTick(m_audioStream, 0);
+        SendStreamTick(m_audioStream, winrt::TimeSpan::zero());
         m_audioTime = offset;
         PrintLine("[First audio] %lldms", VideoFrameAnalyzer::AsMilliseconds(offset));
     }
-
     //PrintLine("audio: %lld", m_audioTime.count());
-    audio->SetSampleTime(m_audioTime.count());
-    WriteInternal(audio, m_audioStream);
-    m_audioTime += VideoFrameAnalyzer::GetSampleDuration(audio);
-    
+    WINRT_VERIFY_(S_OK, audio->SetSampleTime(m_audioTime.count()));
+    m_audioTime += WriteInternal(audio, m_audioStream);
 }
 
-void Recording::WriteVideo(IMFSample* video)
+winrt::TimeSpan RecordingFile::WriteInternal(IMFSample* sample, DWORD stream) const
 {
-    //PrintLine("VIDEO: %lld", m_videoTime.count());
-    WriteInternal(video, m_videoStream);
-    m_videoTime += VideoFrameAnalyzer::GetSampleDuration(video);
+    LOG_IF_FAILED(m_writer->WriteSample(stream, sample));
+    return VideoFrameAnalyzer::GetSampleDuration(sample);
 }
 
-void Recording::WriteInternal(IMFSample* sample, DWORD stream)
+void RecordingFile::SendStreamTick(DWORD stream, winrt::TimeSpan timestamp) const
 {
-    if (!m_done.load(std::memory_order_relaxed))
+    LOG_IF_FAILED(m_writer->SendStreamTick(stream, timestamp.count()));
+}
+
+bool RecordingFile::WaitForFirstKeyFrame(IMFSample* video)
+{
+    uint32_t keyframe{};
+    video->GetUINT32(MFSampleExtension_CleanPoint, &keyframe);
+    if (!keyframe)
     {
-        LOG_IF_FAILED(m_writer->WriteSample(stream, sample));
+        // Need a proper cleanpoint
+        return false;
+    }
+    const auto dts = VideoFrameAnalyzer::GetDts(video);
+    const auto elapsedSinceCaptured = VideoFrameAnalyzer::Now() - dts;
+    m_videoTime = winrt::TimeSpan::zero();
+    m_acquisitionTime = winrt::clock::now() - elapsedSinceCaptured;
+    m_audioVideoSyncPoint = dts;
+    return true;
+}
+
+void RecordingFile::GetStatistics(DWORD stream, MF_SINK_WRITER_STATISTICS* stats) const
+{
+    if (stream != InvalidStream)
+    {
+        stats->cb = sizeof(MF_SINK_WRITER_STATISTICS);
+        WINRT_VERIFY_(S_OK, m_writer->GetStatistics(stream, stats));
     }
 }

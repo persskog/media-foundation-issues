@@ -32,31 +32,26 @@ struct VideoFrameAnalyzer
     static winrt::TimeSpan GetDts(IMFSample* sample);
     winrt::TimeSpan GetPrevDts() const noexcept { return m_prevDts; }
     static int64_t AsMilliseconds(winrt::TimeSpan ts);
+    static winrt::TimeSpan Now();
+    static constexpr winrt::TimeSpan InvalidTime{ -1 };
 
 private:
     void OnFirstFrame(IMFSample* frame);
     winrt::TimeSpan ElapsedTimeSinceFirstFrame() const;
-
     void ValidateFrameCounter(winrt::TimeSpan elapsedSinceFirstFrame, winrt::TimeSpan frameDuration) const;
-    
     winrt::TimeSpan CheckForIncreasedFrameDelay(winrt::TimeSpan delta) const;
-
     static uint32_t CalculateDroppenFrames(winrt::TimeSpan delta, winrt::TimeSpan frameDuration);
-    static winrt::TimeSpan Now();
-    
     static bool IsInvalidTime(winrt::TimeSpan ts);
 
 private:
-    static constexpr long long HundredNanoSecondsInSecond = 10000000LL;
-    static constexpr winrt::TimeSpan DeltaLimit{ HundredNanoSecondsInSecond * 2 };
-    static constexpr winrt::TimeSpan InvalidTime{ -1 };
-
     winrt::TimeSpan m_prevDts{ InvalidTime };
     winrt::TimeSpan m_clockStart{ InvalidTime };
     winrt::TimeSpan m_avgTimePerFrame{};
-    uint32_t        m_frameCounter{};
-    uint32_t        m_approxDroppedFrames{};
-    uint32_t        m_accumDroppenFrames{};
     winrt::TimeSpan m_accumDuration{};
     winrt::TimeSpan m_delayUntilFirstFrame{ InvalidTime };
+    uint32_t        m_frameCounter{};
+
+#ifdef VV_ENABLE_VIDEO_FRAME_ANALYZER_LOG
+    uint32_t        m_accumDroppenFrames{};
+#endif
 };

@@ -3,28 +3,48 @@
 #include <mfidl.h>
 #include "video_frame_analyzer.hpp"
 
-struct Recording : winrt::implements<Recording, IMFAsyncCallback>
+struct RecordingFile : winrt::implements<RecordingFile, IMFAsyncCallback>
 {
+    static constexpr DWORD InvalidStream = 0xffffffff;
+
+    static HRESULT Create(
+        std::wstring    filePath,
+        IMFMediaType*   videoType,
+        IMFMediaType*   audioType,
+        RecordingFile** file);
+
+    RecordingFile(IMFSinkWriter* writer, DWORD audioStream, DWORD videoStream);
+    ~RecordingFile();
     HRESULT __stdcall GetParameters(DWORD* flags, DWORD* queue) noexcept final;
     HRESULT __stdcall Invoke(IMFAsyncResult* result) noexcept final;
-
-    HRESULT Initialize(IMFMediaType* videoType, IMFMediaType* audioType);
-    HRESULT Done();
+    HRESULT Prepare(IMFMediaType* videoType);
+    HRESULT Finalize() const;
+    winrt::DateTime AcquisitionTime() const noexcept { return m_acquisitionTime; }
+    void GetStatistics(MF_SINK_WRITER_STATISTICS* videoStats, MF_SINK_WRITER_STATISTICS* audioStats) const;
 
 private:
-    void Write(IMFSample* frame);
-    void WriteAudio(IMFSample* audio);
     void WriteVideo(IMFSample* video);
+    void WriteAudio(IMFSample* audio);
+    winrt::TimeSpan WriteInternal(IMFSample* sample, DWORD stream) const;
+    void SendStreamTick(DWORD stream, winrt::TimeSpan timestamp) const;
+    bool WaitForFirstKeyFrame(IMFSample* video);
 
-    void WriteInternal(IMFSample* sample, DWORD stream);
+    bool HasAudioVideoSyncPoint() const noexcept { return m_audioVideoSyncPoint >= winrt::TimeSpan::zero(); }
+    bool ReceivedFirstKeyFrame() const noexcept { return m_videoTime >= winrt::TimeSpan::zero(); }
+    bool FirstAudioSample() const noexcept { return m_audioTime < winrt::TimeSpan::zero(); }
+
+    void GetStatistics(DWORD stream, MF_SINK_WRITER_STATISTICS* stats) const;
 
 private:
-    VideoFrameAnalyzer            m_analyzer;
-    DWORD                         m_videoStream{};
-    DWORD                         m_audioStream{ 0xffffffff };
-    std::atomic_bool              m_done;
-    winrt::TimeSpan               m_videoTime{ -1 };
-    winrt::TimeSpan               m_audioTime{ -1 };
-    winrt::TimeSpan               m_audioVideoSyncPoint{ -1 };
+    DWORD                         m_videoStream{ InvalidStream };
+    DWORD                         m_audioStream{ InvalidStream };
+    DWORD                         m_workQueue{ 0x1 };
+    winrt::TimeSpan               m_audioTime{ VideoFrameAnalyzer::InvalidTime };
+    winrt::TimeSpan               m_audioVideoSyncPoint{ VideoFrameAnalyzer::InvalidTime };
     winrt::com_ptr<IMFSinkWriter> m_writer;
+    winrt::TimeSpan               m_videoTime{ VideoFrameAnalyzer::InvalidTime };
+    VideoFrameAnalyzer            m_videoAnalyzer;
+    winrt::DateTime               m_acquisitionTime{};
+    MF_SINK_WRITER_STATISTICS     m_videoStats{};
+    MF_SINK_WRITER_STATISTICS     m_audioStats{};
 };

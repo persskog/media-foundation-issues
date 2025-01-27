@@ -19,13 +19,13 @@ winrt::TimeSpan VideoFrameAnalyzer::Analyze(IMFSample* frame)
 
     ++m_frameCounter;
     const auto elapsedSinceFirstFrame = ElapsedTimeSinceFirstFrame();
-
     if (IsInvalidTime(m_prevDts))
     {
         OnFirstFrame(frame);
+
+
         return {};
     }
-
     uint32_t discontinuity{};
     uint32_t lostFramesSinceLastValid{};
     frame->GetUINT32(MFSampleExtension_Discontinuity, &discontinuity);
@@ -40,20 +40,20 @@ winrt::TimeSpan VideoFrameAnalyzer::Analyze(IMFSample* frame)
     {
         // We can have some dropped frames by the encoder
         lostFramesSinceLastValid = CalculateDroppenFrames(deltaDts, duration);
+
+#ifdef VV_ENABLE_VIDEO_FRAME_ANALYZER_LOG
         m_accumDroppenFrames += lostFramesSinceLastValid;
         VFA_LOG("[Discontinuity] %lld (%lldms) ~%u lost since last valid (total lost %u)",
             deltaDts.count(),
             duration_cast<milliseconds>(deltaDts).count(),
             lostFramesSinceLastValid,
             m_accumDroppenFrames);
+#endif
     }
-    //else
-    //{
-    //    auto delay = CheckForIncreasedFrameDelay(deltaDts);
-    //    // TODO: What should be done here?
-    //}
 
+#ifdef VV_ENABLE_VIDEO_FRAME_ANALYZER_LOG
     ValidateFrameCounter(elapsedSinceFirstFrame,duration);
+#endif
 
     // The actual time missing in the stream
     return lostFramesSinceLastValid * duration;
@@ -66,8 +66,8 @@ void VideoFrameAnalyzer::Initialize(IMFMediaType* type)
     uint64_t avgTimePerFrame{};
     LOG_IF_FAILED(::MFFrameRateToAverageTimePerFrame(num, den, &avgTimePerFrame));
     m_avgTimePerFrame = winrt::TimeSpan{ avgTimePerFrame };
-    const auto fps = num / static_cast<double>(den);
-    VFA_LOG("Video frame rate: %.2ffps (%lld)", fps, m_avgTimePerFrame);
+    VFA_LOG("Video frame rate: %.2ffps (%lld)", num / static_cast<double>(den), m_avgTimePerFrame);
+    Reset();
 }
 
 void VideoFrameAnalyzer::Reset()
@@ -76,31 +76,32 @@ void VideoFrameAnalyzer::Reset()
     m_clockStart = InvalidTime;
     m_delayUntilFirstFrame = InvalidTime;
     m_frameCounter = {};
-    m_approxDroppedFrames = {};
+    m_accumDuration = {};
 }
 
 void VideoFrameAnalyzer::OnFirstFrame(IMFSample* frame)
 {
     using namespace std::chrono;
+    uint32_t keyframe{};
+    frame->GetUINT32(MFSampleExtension_CleanPoint, &keyframe);
+    if (!keyframe)
+    {
+        return;
+    }
     const auto now = VideoFrameAnalyzer::Now();
     const auto dts = GetDts(frame);
     const auto duration = GetSampleDuration(frame);
     const auto delay = now - dts;
-
-#ifdef _DEBUG
-    uint32_t keyframe{};
-    frame->GetUINT32(MFSampleExtension_CleanPoint, &keyframe);
-    WINRT_ASSERT(keyframe);
-#endif // _DEBUG
-
     m_clockStart = now - delay;
     m_prevDts = dts;
     m_delayUntilFirstFrame = delay;
-    m_accumDroppenFrames = 0;
     m_accumDuration += duration;
+#ifdef VV_ENABLE_VIDEO_FRAME_ANALYZER_LOG
+    m_accumDroppenFrames = 0;
     VFA_LOG("[First frame] %lld, %lldms delay since captured",
         dts.count(), 
         AsMilliseconds(delay));
+#endif
 }
 
 winrt::TimeSpan VideoFrameAnalyzer::ElapsedTimeSinceFirstFrame() const
@@ -110,21 +111,17 @@ winrt::TimeSpan VideoFrameAnalyzer::ElapsedTimeSinceFirstFrame() const
 
 void VideoFrameAnalyzer::ValidateFrameCounter(winrt::TimeSpan elapsedSinceFirstFrame, winrt::TimeSpan frameDuration) const
 {
+#ifdef VV_ENABLE_VIDEO_FRAME_ANALYZER_LOG
+
     using namespace std::chrono;
-
     const auto diff_duration = elapsedSinceFirstFrame - m_accumDuration;
-
     // Based upon the clock this should represent an approximation of
     // number of frames received duration current period
     const auto num_frames_clock_based = elapsedSinceFirstFrame.count() / static_cast<double>(frameDuration.count());
     // This is based on accumelated duration, it should match the frame counter
     const auto num_frames_duration_based = m_accumDuration.count() / static_cast<double>(frameDuration.count());
-
     const auto frames_diff = num_frames_duration_based - num_frames_clock_based;
-
     const uint32_t counter = m_frameCounter + m_accumDroppenFrames;
-    const auto actual_frames = abs(num_frames_clock_based - num_frames_duration_based);
-
     if (abs(frames_diff) > 1.0)
     {
         VFA_LOG("frame %u: [%.2lf, %.2lf] %.2lf",
@@ -134,7 +131,8 @@ void VideoFrameAnalyzer::ValidateFrameCounter(winrt::TimeSpan elapsedSinceFirstF
             frames_diff);
     }
 
-    
+#endif
+
   /*  if (actual_frames > 1.0)
     {
         VFA_LOG(
