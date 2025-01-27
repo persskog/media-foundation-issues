@@ -17,18 +17,25 @@ struct RecordingFile : winrt::implements<RecordingFile, IMFAsyncCallback>
     static constexpr DWORD InvalidStream = 0xffffffff;
 
     static HRESULT Create(
-        std::wstring    filePath,
-        IMFMediaType*   videoType,
-        IMFMediaType*   audioType,
-        RecordingFile** file);
+        std::wstring_view filePath,
+        IMFMediaType*     videoType,
+        IMFMediaType*     audioType,
+        RecordingFile**   file);
 
-    RecordingFile(IMFSinkWriter* writer, DWORD workQueue, DWORD audioStream, DWORD videoStream);
+    RecordingFile(
+        IMFSinkWriter*    writer,
+        DWORD             workQueue,
+        DWORD             audioStream,
+        DWORD             videoStream,
+        std::wstring_view filePath);
+
     ~RecordingFile();
     HRESULT __stdcall GetParameters(DWORD* flags, DWORD* queue) noexcept final;
     HRESULT __stdcall Invoke(IMFAsyncResult* result) noexcept final;
     HRESULT Prepare(IMFMediaType* videoType);
     HRESULT Finalize() const;
     winrt::DateTime AcquisitionTime() const noexcept { return m_acquisitionTime; }
+    auto FilePath() const noexcept { return m_filePath.data(); }
     void GetStatistics(MF_SINK_WRITER_STATISTICS* videoStats, MF_SINK_WRITER_STATISTICS* audioStats) const;
 
 private:
@@ -56,4 +63,5 @@ private:
     winrt::DateTime               m_acquisitionTime{};
     MF_SINK_WRITER_STATISTICS     m_videoStats{};
     MF_SINK_WRITER_STATISTICS     m_audioStats{};
+    winrt::hstring                m_filePath;
 };

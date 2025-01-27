@@ -1,10 +1,11 @@
 #include "pch.h"
 #include "recording_file.hpp"
 
-RecordingFile::RecordingFile(IMFSinkWriter* writer, DWORD workQueue, DWORD audioStream, DWORD videoStream)
+RecordingFile::RecordingFile(IMFSinkWriter* writer, DWORD workQueue, DWORD audioStream, DWORD videoStream, std::wstring_view filePath)
     : m_workQueue{ workQueue }
     , m_audioStream{ audioStream }
     , m_videoStream{ videoStream }
+    , m_filePath{ filePath }
 {
     m_writer.copy_from(writer);
 }
@@ -14,7 +15,7 @@ RecordingFile::~RecordingFile()
     WINRT_VERIFY_(S_OK, ::MFUnlockWorkQueue(m_workQueue));
 }
 
-HRESULT RecordingFile::Create(std::wstring filePath, IMFMediaType* videoType, IMFMediaType* audioType, RecordingFile** file)
+HRESULT RecordingFile::Create(std::wstring_view filePath, IMFMediaType* videoType, IMFMediaType* audioType, RecordingFile** file)
 {
     if (filePath.empty() || !videoType)
     {
@@ -50,7 +51,7 @@ HRESULT RecordingFile::Create(std::wstring filePath, IMFMediaType* videoType, IM
     DWORD workQueue{};
     RETURN_IF_FAILED(::MFAllocateSerialWorkQueue(MFASYNC_CALLBACK_QUEUE_MULTITHREADED, &workQueue));
     // Create the new instance and do the final preparations
-    auto instance = winrt::make_self<RecordingFile>(writer.get(), workQueue, audioStream, videoStream);
+    auto instance = winrt::make_self<RecordingFile>(writer.get(), workQueue, audioStream, videoStream, filePath);
     RETURN_IF_FAILED(instance->Prepare(videoType));
     *file = instance.detach();
     return S_OK;
