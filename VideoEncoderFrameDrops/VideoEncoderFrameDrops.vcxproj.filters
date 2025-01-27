@@ -27,6 +27,9 @@
     <ClInclude Include="recording.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="audio_device.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -42,6 +45,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="recording.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="audio_device.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

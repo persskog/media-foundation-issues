@@ -33,6 +33,12 @@
 #include "wil/resource.h"
 #include "winrt/Windows.Foundation.h"
 #include "winrt/Windows.Foundation.Collections.h"
+#include "winrt/Windows.Media.Audio.h"
+#include "winrt/Windows.Media.MediaProperties.h"
+#include "winrt/Windows.Devices.h"
+#include "winrt/Windows.Devices.Enumeration.h"
+#include "winrt/Windows.Media.Render.h"
+#include "winrt/Windows.Media.Capture.h"
 
 #define OUTPUT_TO_DEBUG
 
@@ -40,14 +46,21 @@ namespace winrt {
 
     using namespace Windows::Foundation;
     using namespace Windows::Foundation::Collections;
+    using namespace Windows::Media;
+    using namespace Windows::Media::Audio;
+    using namespace Windows::Media::MediaProperties;
+    using namespace Windows::Devices::Enumeration;
 
     template<>
     inline bool is_guid_of<IMFCaptureEngineOnSampleCallback2>(guid const& id) noexcept
     {
         return is_guid_of<IMFCaptureEngineOnSampleCallback2, IMFCaptureEngineOnSampleCallback>(id);
     }
-
 }
+
+// {2F86E7BE-AF1E-4F7B-8D94-2A594F743286}
+static const GUID VidiView_AudioSample = { 0x2f86e7be, 0xaf1e, 0x4f7b, { 0x8d, 0x94, 0x2a, 0x59, 0x4f, 0x74, 0x32, 0x86 } };
+
 
 
 template <typename ... Args>
@@ -87,7 +100,7 @@ static auto InitializeApp(DWORD flags = MFSTARTUP_LITE) noexcept
         });
 }
 
-static void WaitForQKeyPress()
+inline void WaitForQKeyPress()
 {
     std::cout << "Press 'Q' to exit..." << std::endl;
     while (true)
@@ -101,7 +114,7 @@ static void WaitForQKeyPress()
     }
 }
 
-static constexpr uint32_t GetDX11DeviceCreationFlags() noexcept
+inline constexpr uint32_t GetDX11DeviceCreationFlags() noexcept
 {
 #ifdef _DEBUG
     // Use D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS to request
@@ -118,7 +131,7 @@ static constexpr uint32_t GetDX11DeviceCreationFlags() noexcept
 #endif
 }
 
-static void ConfigureDX11DebugLayer(ID3D11Device* device, ID3D11DeviceContext* ctx) noexcept
+inline void ConfigureDX11DebugLayer(ID3D11Device* device, ID3D11DeviceContext* ctx) noexcept
 {
     winrt::com_ptr<ID3D11Debug> debug;
     winrt::com_ptr<ID3D11InfoQueue> iq;
@@ -154,7 +167,7 @@ static void ConfigureDX11DebugLayer(ID3D11Device* device, ID3D11DeviceContext* c
     WINRT_VERIFY_(S_OK, iq->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_MESSAGE, FALSE));
 }
 
-static winrt::com_ptr<ID3D11Device> CreateD3D11Device()
+inline winrt::com_ptr<ID3D11Device> CreateD3D11Device()
 {
     constexpr D3D_FEATURE_LEVEL levels[2u] = { D3D_FEATURE_LEVEL_12_0, D3D_FEATURE_LEVEL_11_1 };
     constexpr auto flags = GetDX11DeviceCreationFlags();
@@ -179,5 +192,17 @@ static winrt::com_ptr<ID3D11Device> CreateD3D11Device()
     ctx.as<ID3D11Multithread>()->SetMultithreadProtected(1);
     ConfigureDX11DebugLayer(device.get(), ctx.get());
     return device;
+}
+
+inline bool CopyAttribute(const GUID& key, IMFAttributes* src, IMFAttributes* dst)
+{
+    PROPVARIANT var{};
+    if (SUCCEEDED(src->GetItem(key, &var)))
+    {
+        LOG_IF_FAILED(dst->SetItem(key, var));
+        ::PropVariantClear(&var);
+        return true;
+    }
+    return false;
 }
 

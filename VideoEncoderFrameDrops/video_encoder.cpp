@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "video_encoder.hpp"
+#include "audio_device.hpp"
 
 static auto AsString(const GUID& event)
 {
@@ -27,22 +28,12 @@ static winrt::com_ptr<IMFAttributes> CreateCaptureEngineSettings(::IUnknown* dxg
     THROW_IF_FAILED(::MFCreateAttributes(attr.put(), 6));
     WINRT_VERIFY_(S_OK, attr->SetUINT32(MF_CAPTURE_ENGINE_USE_VIDEO_DEVICE_ONLY, TRUE));
     WINRT_VERIFY_(S_OK, attr->SetUnknown(MF_CAPTURE_ENGINE_D3D_MANAGER, dxgiManager));
-    WINRT_VERIFY_(S_OK, attr->SetUINT32(MF_CAPTURE_ENGINE_RECORD_SINK_VIDEO_MAX_UNPROCESSED_SAMPLES, 16));
-    WINRT_VERIFY_(S_OK, attr->SetUINT32(MF_CAPTURE_ENGINE_RECORD_SINK_VIDEO_MAX_PROCESSED_SAMPLES,   16));
+    WINRT_VERIFY_(S_OK, attr->SetUINT32(MF_CAPTURE_ENGINE_RECORD_SINK_VIDEO_MAX_UNPROCESSED_SAMPLES, 8));
+    WINRT_VERIFY_(S_OK, attr->SetUINT32(MF_CAPTURE_ENGINE_RECORD_SINK_VIDEO_MAX_PROCESSED_SAMPLES,   8));
     return attr;
 }
 
-static bool CopyAttribute(const GUID& key, IMFAttributes* src, IMFAttributes* dst)
-{
-    PROPVARIANT var{};
-    if (SUCCEEDED(src->GetItem(key, &var)))
-    {
-        LOG_IF_FAILED(dst->SetItem(key, var));
-        ::PropVariantClear(&var);
-        return true;
-    }
-    return false;
-}
+
 
 static HRESULT CreateMediaTypeAndEncoderParameters(IMFMediaType*   deviceType,
                                                    IMFMediaType**  type,
@@ -119,7 +110,23 @@ struct Callback : winrt::implements<Callback, IMFCaptureEngineOnEventCallback>
     winrt::weak_ref<VideoEncoder> m_encoder;
 };
 
+struct PreviewCallback : winrt::implements<PreviewCallback, IMFCaptureEngineOnSampleCallback2>
+{
+    PreviewCallback() = default;
+
+    HRESULT __stdcall OnSample(IMFSample*) noexcept final
+    {
+        return S_OK;
+    }
+
+    HRESULT __stdcall OnSynchronizedEvent(IMFMediaEvent*) noexcept final
+    {
+        return S_OK;
+    }
+};
+
 constexpr auto PhotoSourceStream = static_cast<DWORD>(MF_CAPTURE_ENGINE_PREFERRED_SOURCE_STREAM_FOR_PHOTO);
+constexpr auto PreviewSourceStream = static_cast<DWORD>(MF_CAPTURE_ENGINE_PREFERRED_SOURCE_STREAM_FOR_VIDEO_PREVIEW);
 constexpr auto RecordSourceStream = static_cast<DWORD>(MF_CAPTURE_ENGINE_PREFERRED_SOURCE_STREAM_FOR_VIDEO_RECORD);
 
 
@@ -167,6 +174,9 @@ HRESULT __stdcall VideoEncoder::OnSample(IMFSample* sample) noexcept
     DWORD flags{};
     DWORD queue{};
     m_recording->GetParameters(&flags, &queue);
+
+    //auto cpy = CopySample(sample);
+    //::MFPutWorkItem2(queue, 0, m_recording.get(), cpy.get());
     ::MFPutWorkItem2(queue, 0, m_recording.get(), sample);
     return S_OK;
 }
@@ -210,15 +220,43 @@ void VideoEncoder::OnCaptureEngineEvent(IMFMediaEvent* event)
     }
 }
 
-void VideoEncoder::StartEncoder()
+void VideoEncoder::PrepareOutputFile(AudioDevice* audioDevice)
 {
-    LOG_IF_FAILED(m_engine->StartRecord());
+    auto sink = GetRecordSink();
+    winrt::com_ptr<IMFMediaType> videoType;
+    winrt::com_ptr<IMFMediaType> audioType;
+
+    THROW_IF_FAILED(sink->GetOutputMediaType(0, videoType.put()));
+    m_recording = winrt::make_self<Recording>();
+
+    if (audioDevice)
+    {
+        audioDevice->GetOutputType(audioType.put());
+        audioDevice->SetDestination(m_recording.try_as<IMFAsyncCallback>().get());
+    }
+
+    m_recording->Initialize(videoType.get(), audioType.get());
 }
 
-void VideoEncoder::StopEncoder()
+void VideoEncoder::StartEncoder(AudioDevice* audioDevice)
 {
+    LOG_IF_FAILED(m_engine->StartRecord());
+    LOG_IF_FAILED(m_engine->StartPreview());
+    if (audioDevice)
+    {
+        audioDevice->StartCapture();
+    }
+}
+
+void VideoEncoder::StopEncoder(AudioDevice* audioDevice)
+{
+    if (audioDevice)
+    {
+        audioDevice->StopCapture();
+    }
     LOG_IF_FAILED(m_engine->StopRecord(FALSE, TRUE));
     LOG_IF_FAILED(m_recording->Done());
+    LOG_IF_FAILED(m_engine->StopPreview());
 }
 
 void VideoEncoder::TakePhoto()
@@ -260,6 +298,13 @@ winrt::com_ptr<IMFCaptureSource> VideoEncoder::GetSource() const
     winrt::com_ptr<IMFCaptureSource> source;
     LOG_IF_FAILED(m_engine->GetSource(source.put()));
     return source;
+}
+
+winrt::com_ptr<IMFCapturePreviewSink> VideoEncoder::GetPreviewSink() const
+{
+    winrt::com_ptr<IMFCaptureSink> sink;
+    LOG_IF_FAILED(m_engine->GetSink(MF_CAPTURE_ENGINE_SINK_TYPE_PREVIEW, sink.put()));
+    return sink.try_as<IMFCapturePreviewSink>();
 }
 
 winrt::com_ptr<IMFCaptureRecordSink> VideoEncoder::GetRecordSink() const
@@ -312,10 +357,16 @@ HRESULT VideoEncoder::OnInitialized(HRESULT status)
     RETURN_IF_FAILED(CreateMediaTypeAndEncoderParameters(deviceType.get(), encodingType.put(), encoderSettings.put()));
     RETURN_IF_FAILED(encoderSettings->GetUINT32(CODECAPI_AVEncMPVGOPSize, &m_gopLength));
 
-    auto sink = GetRecordSink();
-    RETURN_IF_FAILED(sink->AddStream(RecordSourceStream, encodingType.get(), nullptr, &sinkStream));
-    RETURN_IF_FAILED(sink->SetSampleCallback(sinkStream, this));
-    RETURN_IF_FAILED(sink->Prepare());
+    auto record_sink = GetRecordSink();
+    RETURN_IF_FAILED(record_sink->AddStream(RecordSourceStream, encodingType.get(), nullptr, &sinkStream));
+    RETURN_IF_FAILED(record_sink->SetSampleCallback(sinkStream, this));
+    RETURN_IF_FAILED(record_sink->Prepare());
+
+    // Dummy preview
+    auto preview_sink = GetPreviewSink();
+    RETURN_IF_FAILED(preview_sink->AddStream(PreviewSourceStream, deviceType.get(), nullptr, &sinkStream));
+    auto preview_callback = winrt::make<PreviewCallback>();
+    RETURN_IF_FAILED(preview_sink->SetSampleCallback(sinkStream, preview_callback.get()));
     return S_OK;
 }
 
@@ -346,8 +397,6 @@ HRESULT VideoEncoder::OnSinkPrepared(HRESULT status)
         LOG_IF_FAILED(codec->SetValue(&CODECAPI_AVEncMPVGOPSize, &var));
     }
 
-    m_recording = winrt::make_self<Recording>();
-    m_recording->Initialize(type.get());
     SignalStatus(S_OK);
     return S_OK;
 }

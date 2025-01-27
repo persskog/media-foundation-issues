@@ -36,16 +36,15 @@ static void WaitForQKeyPress()
 
 int main()
 {
-    constexpr auto FRAGMENTED_MP4 = L"C:\\Users\\carl\\Videos\\glitch_0928_audio_video_fragmented.mp4";
+    constexpr auto FRAGMENTED_MP4 = L"D:\\media-foundation-issues\\fmpeg_audio_video_sync.mp4";
     constexpr auto REGULAR_MP4 = L"C:\\Users\\carl\\Videos\\glitch_0928_audio_video.mp4";
-    constexpr auto REINDEX_MP4 = L"C:\\Users\\carl\\Videos\\reindex.mp4";
+    constexpr auto REINDEX_MP4 = L"D:\\media-foundation-issues\\reindex.mp4";
 
     try
     {
         auto app{ InitializeApp() };
-        
-        //FileReader::Reindex(FRAGMENTED_MP4, REINDEX_MP4);
-        FileReader::ReadFile(FRAGMENTED_MP4);
+        FileReader::Reindex(FRAGMENTED_MP4, REINDEX_MP4);
+        //FileReader::ReadFile(FRAGMENTED_MP4);
     }
     catch (...)
     {

@@ -103,12 +103,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="audio_device.hpp" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="recording.hpp" />
     <ClInclude Include="video_encoder.hpp" />
     <ClInclude Include="video_frame_analyzer.hpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="audio_device.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>

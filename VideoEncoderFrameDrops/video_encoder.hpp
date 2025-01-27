@@ -2,6 +2,8 @@
 #include "video_frame_analyzer.hpp"
 #include "recording.hpp"
 
+class AudioDevice;
+
 struct VideoEncoder : winrt::implements<VideoEncoder, IMFCaptureEngineOnSampleCallback2>
 {
     VideoEncoder(const winrt::com_ptr<IMFCaptureEngine>& engine);
@@ -13,8 +15,10 @@ struct VideoEncoder : winrt::implements<VideoEncoder, IMFCaptureEngineOnSampleCa
     HRESULT __stdcall OnSynchronizedEvent(IMFMediaEvent* event) noexcept final;
     void OnCaptureEngineEvent(IMFMediaEvent* event);
 
-    void StartEncoder();
-    void StopEncoder();
+    void PrepareOutputFile(AudioDevice* audioDevice);
+
+    void StartEncoder(AudioDevice* audioDevice);
+    void StopEncoder(AudioDevice* audioDevice);
     void TakePhoto();
 
 private:
@@ -22,6 +26,7 @@ private:
     void SignalStatus(HRESULT stauts);
 
     winrt::com_ptr<IMFCaptureSource> GetSource() const;
+    winrt::com_ptr<IMFCapturePreviewSink> GetPreviewSink() const;
     winrt::com_ptr<IMFCaptureRecordSink> GetRecordSink() const;
     winrt::com_ptr<IMFCapturePhotoSink> GetPhotoSink() const;
     winrt::com_ptr<IMFTransform> GetEncoderMFT(IMFCaptureSink* sink) noexcept;
@@ -30,8 +35,7 @@ private:
     HRESULT OnSinkPrepared(HRESULT status);
 
 private:
-    winrt::com_ptr<Recording>       m_recording;
-    //VideoFrameAnalyzer               m_analyzer;
+    winrt::com_ptr<Recording>        m_recording;
     winrt::com_ptr<IMFCaptureEngine> m_engine;
     winrt::com_ptr<IMFTransform>     m_encoderMFT;
     winrt::handle                    m_ready;

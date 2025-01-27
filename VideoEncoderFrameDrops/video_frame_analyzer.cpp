@@ -36,18 +36,17 @@ winrt::TimeSpan VideoFrameAnalyzer::Analyze(IMFSample* frame)
     m_accumDuration += duration;
     m_prevDts = dts;
 
-    //if (discontinuity)
-    //{
-    //    // We can have some dropped frames by the encoder
-    //    lostFramesSinceLastValid = CalculateDroppenFrames(deltaDts, duration);
-    //    m_accumDroppenFrames += lostFramesSinceLastValid;
-
-    //    VFA_LOG("[Discontinuity] %lld (%lldms) ~%u lost since last valid (total lost %u)",
-    //        deltaDts.count(),
-    //        duration_cast<milliseconds>(deltaDts).count(),
-    //        lostFramesSinceLastValid,
-    //        m_accumDroppenFrames);
-    //}
+    if (discontinuity)
+    {
+        // We can have some dropped frames by the encoder
+        lostFramesSinceLastValid = CalculateDroppenFrames(deltaDts, duration);
+        m_accumDroppenFrames += lostFramesSinceLastValid;
+        VFA_LOG("[Discontinuity] %lld (%lldms) ~%u lost since last valid (total lost %u)",
+            deltaDts.count(),
+            duration_cast<milliseconds>(deltaDts).count(),
+            lostFramesSinceLastValid,
+            m_accumDroppenFrames);
+    }
     //else
     //{
     //    auto delay = CheckForIncreasedFrameDelay(deltaDts);
