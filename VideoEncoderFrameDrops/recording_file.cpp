@@ -110,21 +110,24 @@ HRESULT RecordingFile::Prepare(IMFMediaType* videoType)
 
 HRESULT RecordingFile::Finalize() const
 {
-    try
+    WINRT_ASSERT(m_writer);
+    if (HRESULT hr = m_writer->Finalize(); FAILED(hr))
     {
-        WINRT_ASSERT(m_writer);
-        THROW_IF_FAILED(m_writer->Finalize());
-        THROW_IF_FAILED(MF_E_UNAUTHORIZED);
-        winrt::file_handle file { OpenFile(m_filePath) };
-        THROW_LAST_ERROR_IF(!file);
-        const FILETIME filetime = winrt::clock::to_FILETIME(m_acquisitionTime);
-        THROW_IF_WIN32_BOOL_FALSE(::SetFileTime(file.get(), &filetime, nullptr, nullptr));
-        return S_OK;
+        return hr;
     }
-    catch (...)
+
+    winrt::file_handle file{ OpenFile(m_filePath) };
+    if (!file)
     {
-        RETURN_CAUGHT_EXCEPTION();
+        return HRESULT_FROM_WIN32(::GetLastError());
     }
+
+    const FILETIME filetime = winrt::clock::to_FILETIME(m_acquisitionTime);
+    if (!::SetFileTime(file.get(), &filetime, nullptr, nullptr))
+    {
+        return HRESULT_FROM_WIN32(::GetLastError());
+    }
+    return S_OK;
 }
 
 void RecordingFile::Close(MF_SINK_WRITER_STATISTICS* videoStats,

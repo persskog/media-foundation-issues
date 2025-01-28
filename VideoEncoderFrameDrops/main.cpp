@@ -48,7 +48,7 @@ static winrt::IAsyncAction RunEncoderAsync(winrt::com_ptr<VideoEncoder> encoder,
     co_await winrt::resume_after(duration);
     encoder->StopEncoder(audioDevice.get());
 
-    HRESULT hr = file->Finalize();
+    LOG_IF_FAILED(file->Finalize());
 
     op.Cancel();
 }
