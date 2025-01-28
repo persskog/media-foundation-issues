@@ -66,6 +66,7 @@ HRESULT __stdcall RecordingFile::GetParameters(DWORD* flags, DWORD* queue) noexc
 
 HRESULT __stdcall RecordingFile::Invoke(IMFAsyncResult* result) noexcept
 {
+    WINRT_ASSERT(m_writer);
     auto state = result->GetStateNoAddRef();
     if (!state)
     {
@@ -101,6 +102,7 @@ HRESULT __stdcall RecordingFile::Invoke(IMFAsyncResult* result) noexcept
 
 HRESULT RecordingFile::Prepare(IMFMediaType* videoType)
 {
+    WINRT_ASSERT(m_writer);
     // After this, the file is ready to accept video and audio data
     m_videoAnalyzer.Initialize(videoType);
     return m_writer->BeginWriting();
@@ -110,7 +112,9 @@ HRESULT RecordingFile::Finalize() const
 {
     try
     {
+        WINRT_ASSERT(m_writer);
         THROW_IF_FAILED(m_writer->Finalize());
+        THROW_IF_FAILED(MF_E_UNAUTHORIZED);
         winrt::file_handle file { OpenFile(m_filePath) };
         THROW_LAST_ERROR_IF(!file);
         const FILETIME filetime = winrt::clock::to_FILETIME(m_acquisitionTime);
@@ -119,14 +123,14 @@ HRESULT RecordingFile::Finalize() const
     }
     catch (...)
     {
-        LOG_CAUGHT_EXCEPTION();
-        return winrt::to_hresult();
+        RETURN_CAUGHT_EXCEPTION();
     }
 }
 
-void RecordingFile::GetStatistics(MF_SINK_WRITER_STATISTICS* videoStats,
-                                  MF_SINK_WRITER_STATISTICS* audioStats) const
+void RecordingFile::Close(MF_SINK_WRITER_STATISTICS* videoStats,
+                          MF_SINK_WRITER_STATISTICS* audioStats)
 {
+    WINRT_ASSERT(m_writer);
     if (videoStats)
     {
         GetStatistics(m_videoStream, videoStats);
@@ -135,6 +139,7 @@ void RecordingFile::GetStatistics(MF_SINK_WRITER_STATISTICS* videoStats,
     {
         GetStatistics(m_audioStream, audioStats);
     }
+    m_writer = nullptr;
 }
 
 void RecordingFile::WriteVideo(IMFSample* video)

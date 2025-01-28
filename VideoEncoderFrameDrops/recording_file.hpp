@@ -34,7 +34,7 @@ struct RecordingFile : winrt::implements<RecordingFile, IMFAsyncCallback>
     HRESULT Finalize() const;
     winrt::DateTime AcquisitionTime() const noexcept { return m_acquisitionTime; }
     auto FilePath() const noexcept { return m_filePath.data(); }
-    void GetStatistics(MF_SINK_WRITER_STATISTICS* videoStats, MF_SINK_WRITER_STATISTICS* audioStats) const;
+    void Close(MF_SINK_WRITER_STATISTICS* videoStats, MF_SINK_WRITER_STATISTICS* audioStats);
 
 private:
     void WriteVideo(IMFSample* video);
