@@ -78,10 +78,10 @@ void AudioDevice::QuantumStarted(const winrt::AudioGraph& graph, const winrt::II
     m_expectedTimestamp += duration;
 }
 
-void AudioDevice::SetDestination(IMFAsyncCallback* callback)
+void AudioDevice::SetOutputFile(IMFAsyncCallback* file)
 {
     winrt::slim_lock_guard guard{ m_callbackMutex };
-    m_callback.copy_from(callback);
+    m_callback.copy_from(file);
 }
 
 void AudioDevice::DeliverSample(IMFSample* sample) const noexcept
@@ -106,10 +106,12 @@ void AudioDevice::StopCapture()
     m_graph.Stop();
 }
 
-void AudioDevice::GetOutputType(IMFMediaType** type)
+winrt::com_ptr<IMFMediaType> AudioDevice::GetOutputFormat()
 {
-    auto fmt{ m_graph.EncodingProperties() };
-    THROW_IF_FAILED(::MFCreateMediaTypeFromProperties(fmt.try_as<::IUnknown>().get(), type));
+    auto format{ m_graph.EncodingProperties() };
+    winrt::com_ptr<IMFMediaType> type;
+    THROW_IF_FAILED(::MFCreateMediaTypeFromProperties(format.try_as<::IUnknown>().get(), type.put()));
+    return type;
 }
 
 int64_t AudioDevice::CalculateGraphLatency(const winrt::AudioGraph& graph, const uint64_t sampleRate)

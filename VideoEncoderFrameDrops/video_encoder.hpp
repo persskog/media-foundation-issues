@@ -15,7 +15,8 @@ struct VideoEncoder : winrt::implements<VideoEncoder, IMFCaptureEngineOnSampleCa
     HRESULT __stdcall OnSynchronizedEvent(IMFMediaEvent* event) noexcept final;
     void OnCaptureEngineEvent(IMFMediaEvent* event);
 
-    void PrepareOutputFile(AudioDevice* audioDevice);
+    void SetOutputFile(RecordingFile* file);
+    winrt::com_ptr<IMFMediaType> GetEncoderOutputFormat() noexcept;
 
     void StartEncoder(AudioDevice* audioDevice);
     void StopEncoder(AudioDevice* audioDevice);
@@ -30,6 +31,8 @@ private:
     winrt::com_ptr<IMFCaptureRecordSink> GetRecordSink() const;
     winrt::com_ptr<IMFCapturePhotoSink> GetPhotoSink() const;
     winrt::com_ptr<IMFTransform> GetEncoderMFT(IMFCaptureSink* sink) noexcept;
+
+    
 
     HRESULT OnInitialized(HRESULT status);
     HRESULT OnSinkPrepared(HRESULT status);

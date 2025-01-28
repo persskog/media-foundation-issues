@@ -16,11 +16,11 @@ class AudioDevice : public winrt::implements<AudioDevice, ::IUnknown>
 public:
     winrt::IAsyncAction InitializeAsync(winrt::com_ptr<IMFActivate> device);
     void QuantumStarted(const winrt::AudioGraph& graph, const winrt::IInspectable& object);
-    void SetDestination(IMFAsyncCallback* callback);
+    void SetOutputFile(IMFAsyncCallback* file);
     void DeliverSample(IMFSample* sample) const noexcept;
     void StartCapture();
     void StopCapture();
-    void GetOutputType(IMFMediaType** type);
+    winrt::com_ptr<IMFMediaType> GetOutputFormat();
 
 private:
     static int64_t CalculateGraphLatency(const winrt::AudioGraph& graph, const uint64_t sampleRate);

@@ -108,7 +108,20 @@ HRESULT RecordingFile::Prepare(IMFMediaType* videoType)
 
 HRESULT RecordingFile::Finalize() const
 {
-    return m_writer->Finalize();
+    try
+    {
+        THROW_IF_FAILED(m_writer->Finalize());
+        winrt::file_handle file { OpenFile(m_filePath) };
+        THROW_LAST_ERROR_IF(!file);
+        const FILETIME filetime = winrt::clock::to_FILETIME(m_acquisitionTime);
+        THROW_IF_WIN32_BOOL_FALSE(::SetFileTime(file.get(), &filetime, nullptr, nullptr));
+        return S_OK;
+    }
+    catch (...)
+    {
+        LOG_CAUGHT_EXCEPTION();
+        return winrt::to_hresult();
+    }
 }
 
 void RecordingFile::GetStatistics(MF_SINK_WRITER_STATISTICS* videoStats,
@@ -198,4 +211,18 @@ void RecordingFile::GetStatistics(DWORD stream, MF_SINK_WRITER_STATISTICS* stats
         stats->cb = sizeof(MF_SINK_WRITER_STATISTICS);
         WINRT_VERIFY_(S_OK, m_writer->GetStatistics(stream, stats));
     }
+}
+
+HANDLE RecordingFile::OpenFile(std::wstring_view path)
+{
+    constexpr DWORD DesiredAccess = FILE_WRITE_ATTRIBUTES;
+    constexpr DWORD ShareMode = FILE_SHARE_READ | FILE_SHARE_WRITE;
+    return ::CreateFileW(
+        path.data(),
+        DesiredAccess,
+        ShareMode,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr);
 }

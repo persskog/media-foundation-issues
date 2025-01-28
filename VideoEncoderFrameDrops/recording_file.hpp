@@ -49,6 +49,8 @@ private:
 
     void GetStatistics(DWORD stream, MF_SINK_WRITER_STATISTICS* stats) const;
 
+    static HANDLE OpenFile(std::wstring_view path);
+
 private:
     DWORD                         m_videoStream{ InvalidStream };
     DWORD                         m_audioStream{ InvalidStream };

@@ -22,18 +22,33 @@ static winrt::IAsyncAction RunEncoderAsync(winrt::com_ptr<VideoEncoder> encoder,
     co_await winrt::resume_background();
 
     winrt::com_ptr<AudioDevice> audioDevice;
+    winrt::com_ptr<IMFMediaType> audioType;
     if (audio)
     {
         audioDevice = winrt::make_self<AudioDevice>();
         co_await audioDevice->InitializeAsync(audio);
+        audioType = audioDevice->GetOutputFormat();
     }
-    encoder->PrepareOutputFile(audioDevice.get());
-    //encoder->PrepareOutputFile(nullptr);
+    auto videoType = encoder->GetEncoderOutputFormat();
+
+    winrt::com_ptr<RecordingFile> file;
+    THROW_IF_FAILED(RecordingFile::Create(L"fmpeg_recording.mp4",
+        videoType.get(),
+        audioType.get(),
+        file.put()));
+
+    encoder->SetOutputFile(file.get());
+    if (audioDevice)
+    {
+        audioDevice->SetOutputFile(file.get());
+    }
 
     auto op = TakePhotosAsync(encoder);
     encoder->StartEncoder(audioDevice.get());
     co_await winrt::resume_after(duration);
     encoder->StopEncoder(audioDevice.get());
+
+    LOG_IF_FAILED(file->Finalize());
     op.Cancel();
 }
 
@@ -128,7 +143,7 @@ int main()
         auto videoDevice = ShowAvailableVideoDevices();
         auto audioDevice = ShowAvailableAudioDevices();
         auto encoder = VideoEncoder::Create(videoDevice.get(), d3ddevice.get());
-        const auto RECORDING_TIME = 10 * 60s;
+        const auto RECORDING_TIME = 1 * 10s;
         RunEncoderAsync(encoder, audioDevice, RECORDING_TIME).get();
     }
     catch (...)
