@@ -6,57 +6,61 @@ winrt::IAsyncAction AudioDevice::InitializeAsync(winrt::com_ptr<IMFActivate> dev
 {
     co_await winrt::resume_background();
 
-    winrt::DeviceInformation deviceInfo{ nullptr };
-
     wchar_t* link{ nullptr };
-    wchar_t* fname{ nullptr };
     uint32_t len{};
-    device->GetAllocatedString(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_AUDCAP_SYMBOLIC_LINK, &link, &len);
-    device->GetAllocatedString(MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, &fname, &len);
-    auto free_link = wil::scope_exit([=]
-        {
-            ::CoTaskMemFree(link);
-            ::CoTaskMemFree(fname);
-        });
+    THROW_IF_FAILED(device->GetAllocatedString(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_AUDCAP_SYMBOLIC_LINK, &link, &len));
+    auto free_link = wil::scope_exit([=] { ::CoTaskMemFree(link); });
+    auto device_info = co_await winrt::DeviceInformation::CreateFromIdAsync(link);
+    auto device_name = device_info.Name();
+    PrintLine("Initializing '%ws'", device_name.data());
 
-    PrintLine("Initializing '%ws'", fname);
-
-    winrt::hstring id(link);
-    auto dev_info = co_await winrt::DeviceInformation::CreateFromIdAsync(id);
-
-    // Create the audio graph
+    /*
+        Create the audio graph
+    */ 
+    constexpr auto CaptureCategory = winrt::Capture::MediaCategory::Other;
     winrt::AudioGraphSettings settings{ winrt::Render::AudioRenderCategory::Media };
-    //settings.EncodingProperties(winrt::AudioEncodingProperties::CreatePcm(48000, 2, 16));
-    //settings.QuantumSizeSelectionMode(winrt::QuantumSizeSelectionMode::LowestLatency);
+    settings.QuantumSizeSelectionMode(winrt::QuantumSizeSelectionMode::LowestLatency);
 
     auto graphResult{ co_await winrt::AudioGraph::CreateAsync(settings) };
     if (graphResult.Status() != winrt::AudioGraphCreationStatus::Success)
     {
-        auto status = graphResult.Status();
-        auto hr = graphResult.ExtendedError();
+        PrintLine("Audio graph creation failed: %d - 0x%08lx", graphResult.Status(), graphResult.ExtendedError());
         throw winrt::hresult_error(graphResult.ExtendedError());
     }
     m_graph = graphResult.Graph();
-    auto audioFormat{ m_graph.EncodingProperties() };
-    m_sampleRate = audioFormat.SampleRate();
 
-    // Create device input node
-    auto inputNodeResult = co_await m_graph.CreateDeviceInputNodeAsync(
-        winrt::Capture::MediaCategory::GameChat, audioFormat, deviceInfo);
-  
+    /*
+        INPUT : Create device input node
+    */
+    auto inputNodeResult = co_await m_graph.CreateDeviceInputNodeAsync(CaptureCategory, m_graph.EncodingProperties(), device_info);
     if (inputNodeResult.Status() != winrt::AudioDeviceNodeCreationStatus::Success)
     {
+        PrintLine("Input node creation failed: %d - 0x%08lx", inputNodeResult.Status(), inputNodeResult.ExtendedError());
         throw winrt::hresult_error(inputNodeResult.ExtendedError());
     }
     m_inputNode = inputNodeResult.DeviceInputNode();
 
+    /*
+        OUTPUT : Frame output node
+    */
+    m_outputNode = m_graph.CreateFrameOutputNode();
+
     // Create frame output node
-    m_outputNode = m_graph.CreateFrameOutputNode(audioFormat);
     m_inputNode.AddOutgoingConnection(m_outputNode);
     m_graph.QuantumStarted({ get_strong(), &AudioDevice::QuantumStarted });
+    auto audioFormat{ m_outputNode.EncodingProperties() };
+    m_sampleRate = audioFormat.SampleRate();
+
+    PrintLine("");
+    PrintLine("[Audio graph] '%ws' as input device => (%ws) %u channel, %u-bit, %u Hz",
+        device_name.data(),
+        audioFormat.Subtype().data(),
+        audioFormat.ChannelCount(),
+        audioFormat.BitsPerSample(),
+        audioFormat.SampleRate());
 }
 
-void AudioDevice::QuantumStarted(const winrt::AudioGraph& graph, const winrt::IInspectable& object)
+void AudioDevice::QuantumStarted(const winrt::AudioGraph& graph, const winrt::IInspectable&)
 {
     const int64_t dts = ::MFGetSystemTime() - CalculateGraphLatency(graph, m_sampleRate);
     auto audioFrame = m_outputNode.GetFrame();
