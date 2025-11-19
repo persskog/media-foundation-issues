@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="mf_av1_encoding.vcxproj" Id="a4fa5183-2b60-43ff-9a3c-c14fb764cf8d" />
+</Solution>
