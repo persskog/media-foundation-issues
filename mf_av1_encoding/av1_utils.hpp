@@ -52,17 +52,21 @@ struct AV1SeqInfo
     uint8_t chroma_sample_position;
 };
 
-class AV1Helper 
+struct AV1Helper 
 {
-public:
     // LEB128 parsing (used for OBU sizes)
-    static uint64_t ReadLeb128(const uint8_t* data, size_t size, size_t& bytesRead) {
+    static uint64_t ReadLeb128(const uint8_t* data, size_t size, size_t& bytesRead)
+    {
         uint64_t value = 0;
         size_t i = 0;
-        for (; i < size; ++i) {
+        for (; i < size; ++i)
+        {
             uint8_t byte = data[i];
             value |= (static_cast<uint64_t>(byte & 0x7F) << (i * 7));
-            if (!(byte & 0x80)) break;
+            if (!(byte & 0x80))
+            {
+                break;
+            }
         }
         bytesRead = i + 1;
         return value;
@@ -74,10 +78,6 @@ public:
     static std::span<const uint8_t> CreateAV1C(std::span<const uint8_t> samplePayload)
     {
         size_t offset = 0;
-
-        const uint8_t* seqHeaderData = nullptr;
-        size_t seqHeaderSize = 0;
-        AV1SeqInfo info = {};
         bool found = false;
 
         while (offset < samplePayload.size())
@@ -87,15 +87,17 @@ public:
             bool obu_extension_flag = (obu_header >> 2) & 0x1;
             bool obu_has_size_field = (obu_header >> 1) & 0x1;
 
-            offset++; // Move past header byte
-            if (obu_extension_flag) offset++; // Skip extension byte
+            offset++;               // Move past header byte
+            if (obu_extension_flag)
+            {
+                offset++;           // Skip extension byte
+            }
 
             size_t obu_size = 0;
             size_t lebBytes = 0;
-
             if (obu_has_size_field)
             {
-                obu_size = (size_t)ReadLeb128(samplePayload.data() + offset, samplePayload.size() - offset, lebBytes);
+                obu_size = ReadLeb128(samplePayload.data() + offset, samplePayload.size() - offset, lebBytes);
                 offset += lebBytes;
             }
             else
@@ -105,46 +107,12 @@ public:
 
             if (obu_type == 1)
             {
-                seqHeaderData = samplePayload.data() + offset;
-                seqHeaderSize = obu_size;
-
-                // Minimal parse (keep behavior from before)
-                BitReader br(seqHeaderData, seqHeaderSize);
-                info.seq_profile = (uint8_t)br.Read(3);
-                br.Skip(1); // still_picture
-                bool reduced_still_picture_header = br.Read(1);
-
-                if (reduced_still_picture_header)
-                {
-                    info.seq_level_idx_0 = (uint8_t)br.Read(5);
-                    info.seq_tier_0 = 0;
-                    info.high_bitdepth = 0;
-                    info.twelve_bit = 0;
-                    info.monochrome = 0;
-                    info.chroma_subsampling_x = 1;
-                    info.chroma_subsampling_y = 1;
-                    info.chroma_sample_position = 0;
-                }
-                else
-                {
-                    // best-effort fallback as before
-                    info.seq_level_idx_0 = 0;
-                    info.seq_tier_0 = 0;
-                    info.high_bitdepth = 0;
-                }
-
-                found = true;
-                break;
+                return samplePayload.subspan(offset, obu_size);
             }
 
             offset += obu_size;
         }
 
-        if (!found)
-            return {};
-
-        // Return a span that references the Sequence Header OBU inside the provided sample payload.
-        // Caller must ensure the underlying buffer remains valid while the span is used.
-        return std::span<const uint8_t>(seqHeaderData, seqHeaderSize);
+        return {};
     }
 };
