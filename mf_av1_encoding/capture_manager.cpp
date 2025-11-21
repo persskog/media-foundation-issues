@@ -12,8 +12,7 @@ using namespace winrt;
 #include <vector>
 #include <cstdint>
 
-// Helper to write big-endian 32-bit
-void WriteBE32(std::vector<uint8_t>& buf, uint32_t value)
+static void WriteBE32(std::vector<uint8_t>& buf, uint32_t value)
 {
     buf.push_back((value >> 24) & 0xFF);
     buf.push_back((value >> 16) & 0xFF);
@@ -21,30 +20,27 @@ void WriteBE32(std::vector<uint8_t>& buf, uint32_t value)
     buf.push_back(value & 0xFF);
 }
 
-// Helper to write 4CC
-void WriteFourCC(std::vector<uint8_t>& buf, const char* fourcc) 
+static void WriteFourCC(std::vector<uint8_t>& buf, const char* fourcc)
 {
     buf.insert(buf.end(), fourcc, fourcc + 4);
 }
 
-HRESULT BuildAV1SampleDescription(IMFMediaType* pMediaType,
-    const uint8_t* obuData,
-    size_t obuSize,
-    uint16_t width,
-    uint16_t height) {
+static HRESULT BuildAV1SampleDescription(IMFMediaType*            pMediaType,
+                                         std::span<const uint8_t> obuData,
+                                         uint16_t                 width,
+                                         uint16_t                 height)
+{
     std::vector<uint8_t> stsd;
 
     // ---- av1C box ----
     std::vector<uint8_t> av1C;
-    WriteBE32(av1C, 12 + (uint32_t)obuSize); // size
+    WriteBE32(av1C, 12 + (uint32_t)obuData.size()); // size
     WriteFourCC(av1C, "av1C");
     av1C.push_back(0x81); // marker(1) + version(1)
     av1C.push_back(0x00); // seq_profile
     av1C.push_back(0x00); // seq_level_idx_0
     av1C.push_back(0x00); // bit_depth + flags
-    av1C.insert(av1C.end(), obuData, obuData + obuSize); // configOBUs
-
-    const auto r = av1C.data();
+    av1C.insert(av1C.end(), obuData.begin(), obuData.end()); // configOBUs
 
     // ---- av01 sample entry ----
     std::vector<uint8_t> av01;
@@ -119,26 +115,26 @@ bool CaptureManager::CreateSampleDescriptorBoxIfNeeded(std::span<const uint8_t> 
 
     // CreateAV1C likely returns an av1C box (size + "av1C" + 4 header bytes + configOBUs).
     // BuildAV1SampleDescription expects raw config OBUs (it will build the av1C box itself).
-    std::vector<uint8_t> av1cBlob = AV1Helper::CreateAV1C(payload);
+    auto av1cBlob = AV1Helper::CreateAV1C(payload);
 
     if (av1cBlob.empty())
         return false;
 
-    const uint8_t* obuData = nullptr;
-    size_t obuSize = 0;
+    //const uint8_t* obuData = nullptr;
+    //size_t obuSize = 0;
 
-    // Detect av1C box header and skip it if present (size(4) + "av1C"(4) + 4 bytes header = 12)
-    if (av1cBlob.size() > 12 && std::memcmp(av1cBlob.data() + 4, "av1C", 4) == 0)
-    {
-        obuData = av1cBlob.data() + 12;
-        obuSize = av1cBlob.size() - 12;
-    }
-    else
-    {
-        // If helper already returned just the configOBUs, use them directly.
-        obuData = av1cBlob.data();
-        obuSize = av1cBlob.size();
-    }
+    //// Detect av1C box header and skip it if present (size(4) + "av1C"(4) + 4 bytes header = 12)
+    //if (av1cBlob.size() > 12 && std::memcmp(av1cBlob.data() + 4, "av1C", 4) == 0)
+    //{
+    //    obuData = av1cBlob.data() + 12;
+    //    obuSize = av1cBlob.size() - 12;
+    //}
+    //else
+    //{
+    //    // If helper already returned just the configOBUs, use them directly.
+    //    obuData = av1cBlob.data();
+    //    obuSize = av1cBlob.size();
+    //}
 
     // Get frame size for sample entry (width/height)
     UINT32 width = 0, height = 0;
@@ -150,7 +146,7 @@ bool CaptureManager::CreateSampleDescriptorBoxIfNeeded(std::span<const uint8_t> 
     }
 
     // Build and set the full 'stsd' sample description on the media type
-    HRESULT hr = BuildAV1SampleDescription(m_mediaType.get(), obuData, obuSize, static_cast<uint16_t>(width), static_cast<uint16_t>(height));
+    HRESULT hr = BuildAV1SampleDescription(m_mediaType.get(), av1cBlob, static_cast<uint16_t>(width), static_cast<uint16_t>(height));
     if (FAILED(hr))
         return false;
 
@@ -212,7 +208,7 @@ void CaptureManager::PrepareAv1Encoding() noexcept
     CopyAttribute(MF_MT_FRAME_SIZE, srcType.get(), av1Type.get());
     CopyAttribute(MF_MT_FRAME_RATE, srcType.get(), av1Type.get());
     av1Type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
-    av1Type->SetUINT32(MF_MT_AVG_BITRATE, 1u * 1024u * 1024u);
+    av1Type->SetUINT32(MF_MT_AVG_BITRATE, 5u * 1024u * 1024u);
     ::MFSetAttributeRatio(av1Type.get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
 
     DWORD sinkStreamIndex{};
