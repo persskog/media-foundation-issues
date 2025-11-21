@@ -111,30 +111,15 @@ HRESULT __stdcall CaptureManager::OnSample(IMFSample* sample) noexcept
 bool CaptureManager::CreateSampleDescriptorBoxIfNeeded(std::span<const uint8_t> payload) noexcept
 {
     if (!m_mediaType)
+    {
         return false;
+    }
 
-    // CreateAV1C likely returns an av1C box (size + "av1C" + 4 header bytes + configOBUs).
-    // BuildAV1SampleDescription expects raw config OBUs (it will build the av1C box itself).
-    auto av1cBlob = AV1Helper::CreateAV1C(payload);
-
+    auto av1cBlob = AV1Helper::ExtractConfigObu(payload);
     if (av1cBlob.empty())
+    {
         return false;
-
-    //const uint8_t* obuData = nullptr;
-    //size_t obuSize = 0;
-
-    //// Detect av1C box header and skip it if present (size(4) + "av1C"(4) + 4 bytes header = 12)
-    //if (av1cBlob.size() > 12 && std::memcmp(av1cBlob.data() + 4, "av1C", 4) == 0)
-    //{
-    //    obuData = av1cBlob.data() + 12;
-    //    obuSize = av1cBlob.size() - 12;
-    //}
-    //else
-    //{
-    //    // If helper already returned just the configOBUs, use them directly.
-    //    obuData = av1cBlob.data();
-    //    obuSize = av1cBlob.size();
-    //}
+    }
 
     // Get frame size for sample entry (width/height)
     UINT32 width = 0, height = 0;
