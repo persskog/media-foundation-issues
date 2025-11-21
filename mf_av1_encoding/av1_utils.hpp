@@ -69,7 +69,8 @@ public:
     }
 
     // Create the av1C box blob
-    static std::vector<uint8_t> CreateAV1C(std::span<const uint8_t> samplePayload) {
+    static std::vector<uint8_t> CreateAV1C(std::span<const uint8_t> samplePayload)
+    {
         size_t offset = 0;
 
         // 1. Find the Sequence Header OBU in the sample
@@ -81,7 +82,8 @@ public:
         AV1SeqInfo info = {};
         bool found = false;
 
-        while (offset < samplePayload.size()) {
+        while (offset < samplePayload.size())
+        {
             // Read OBU Header
             uint8_t obu_header = samplePayload[offset];
             uint8_t obu_type = (obu_header >> 3) & 0xF;
@@ -96,17 +98,21 @@ public:
 
             // Most container formats (like MP4/MKV mappings) include size fields.
             // If this is raw Annex B, parsing is harder. Assuming standard OBU stream with sizes here.
-            if (obu_has_size_field) {
+            if (obu_has_size_field) 
+            {
                 obu_size = (size_t)ReadLeb128(samplePayload.data() + offset, samplePayload.size() - offset, lebBytes);
                 offset += lebBytes;
             }
-            else {
+            else 
+            {
                 // If no size field, the OBU usually extends to the end of the buffer 
                 // or is handled by the container framing.
                 obu_size = samplePayload.size() - offset;
             }
 
-            if (obu_type == 1) { // OBU_SEQUENCE_HEADER
+            if (obu_type == 1) 
+            {
+                // OBU_SEQUENCE_HEADER
                 seqHeaderData = samplePayload.data() + offset;
                 seqHeaderSize = obu_size;
 
@@ -116,7 +122,8 @@ public:
                 br.Skip(1); // still_picture
                 bool reduced_still_picture_header = br.Read(1);
 
-                if (reduced_still_picture_header) {
+                if (reduced_still_picture_header)
+                {
                     info.seq_level_idx_0 = (uint8_t)br.Read(5);
                     info.seq_tier_0 = 0;
                     info.high_bitdepth = 0;
@@ -126,7 +133,8 @@ public:
                     info.chroma_subsampling_y = 1;
                     info.chroma_sample_position = 0;
                 }
-                else {
+                else 
+                {
                     // Standard header
                     bool timing_info_present = br.Read(1);
                     if (timing_info_present) {
@@ -176,7 +184,8 @@ public:
             offset += obu_size;
         }
 
-        if (!found) return {};
+        if (!found) 
+            return {};
 
         // 2. Construct av1C Box
         std::vector<uint8_t> blob;

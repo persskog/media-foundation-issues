@@ -44,6 +44,8 @@ HRESULT BuildAV1SampleDescription(IMFMediaType* pMediaType,
     av1C.push_back(0x00); // bit_depth + flags
     av1C.insert(av1C.end(), obuData, obuData + obuSize); // configOBUs
 
+    const auto r = av1C.data();
+
     // ---- av01 sample entry ----
     std::vector<uint8_t> av01;
     uint32_t av01Size = 86 + (uint32_t)av1C.size(); // minimal size
@@ -252,14 +254,44 @@ void CaptureManager::ForceKeyFrame() const noexcept
     }
 }
 
+static auto BuildFilePathFromCurrentDirectory(std::wstring_view fileName)
+{
+    std::wstring targetPath;
+    WCHAR path[MAX_PATH] = {};
+    if (::GetModuleFileNameW(nullptr, path, ARRAYSIZE(path)))
+    {
+        // Truncate after last backslash to get directory
+        WCHAR* lastSlash = ::wcsrchr(path, L'\\');
+        if (lastSlash)
+        {
+            *lastSlash = L'\0';
+        }
+        targetPath = std::wstring(path) + L"\\" + fileName.data();
+    }
+    else
+    {
+        // Fallback: current working directory
+        if (::GetCurrentDirectoryW(ARRAYSIZE(path), path) && path[0] != L'\0')
+        {
+            targetPath = std::wstring(path) + L"\\" + fileName.data();
+        }
+        else
+        {
+            targetPath = fileName.data(); // last resort - relative path
+        }
+    }
+    return targetPath;
+}
+
 void CaptureManager::CreateWriter()
 {
+    auto targetPath = BuildFilePathFromCurrentDirectory(L"av1.mp4");
     com_ptr<IMFSinkWriter> writer;
-    HRESULT hr = ::MFCreateSinkWriterFromURL(
-        L"D:\\source\\mf_av1_encoding\\av1.mp4",
+    WINRT_VERIFY_(S_OK, ::MFCreateSinkWriterFromURL(
+        targetPath.data(),
         nullptr,
         nullptr,
-        writer.put());
+        writer.put()));
     DWORD avs{};
     WINRT_VERIFY_(S_OK, writer->AddStream(m_mediaType.get(), &avs));
     WINRT_VERIFY_(S_OK, writer->SetInputMediaType(avs, m_mediaType.get(), nullptr));
