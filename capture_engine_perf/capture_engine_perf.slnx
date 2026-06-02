@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="capture_engine_perf.vcxproj" Id="110d20ef-92a1-4b39-89a8-2d36274aaad8" />
+</Solution>
