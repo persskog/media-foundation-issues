@@ -45,7 +45,8 @@ struct FrameCb : winrt::implements<FrameCb, IMFCaptureEngineOnSampleCallback2>
     int64_t         PrevDts{ -1 };
     uint64_t        FrameCounter{};
     winrt::TimeSpan ExpectedFrameDuration{};
-    bool            Reset{};
+    int64_t         FpsStartTime{ -1 };
+    uint32_t        FpsFrameCounter{};
     const char*     Name{};
 
     explicit FrameCb(const char* name) noexcept : Name{ name }
@@ -58,6 +59,8 @@ struct FrameCb : winrt::implements<FrameCb, IMFCaptureEngineOnSampleCallback2>
 
     HRESULT __stdcall OnSample(IMFSample* frame) noexcept final
     {
+        auto now = ::MFGetSystemTime();
+
         if (Name == nullptr)
         {
             return S_OK;
@@ -69,40 +72,54 @@ struct FrameCb : winrt::implements<FrameCb, IMFCaptureEngineOnSampleCallback2>
             frame->GetUINT64(MFSampleExtension_DeviceTimestamp, &dts);
             if (PrevDts >= 0)
             {
+                auto fps = UpdateFps(now);
                 const auto elapsed = dts - PrevDts;
-                const auto elapsed_ms = duration_cast<milliseconds>(winrt::TimeSpan{ static_cast<int64_t>(elapsed) }).count();
+                const auto elapsed_ms = ToMilliseconds(elapsed);
                 const auto dropped = CalculateLostFrames(dts, PrevDts, ExpectedFrameDuration.count());
-                const auto fps = (elapsed > 0) ? (10'000'000.0 / static_cast<double>(elapsed)) : 0.0;
                 if (dropped)
                 {
-                    if (Reset)
-                    {
-                        Reset = false;
-                        PRINTLN("\n======\n");
-                    }
-
-                    PRINTLN("[%s pin]:%llu: %.2f fps, %u dropped frames, %lld ms (%lld 100ns) between two frames",
+                    PRINTLN("[%s pin]:%llu: %u dropped frames, %u ms (%lld 100ns) between two frames",
                         Name,
                         FrameCounter,
-                        fps,
                         dropped,
                         elapsed_ms,
                         elapsed);
                 }
-                else
+                else if (fps)
                 {
-                    
-                    PRINTLN("[%s pin]:%llu: %.2f fps",
-                        Name,
-                        FrameCounter,
-                        fps);
-                    Reset = true;
+                    PRINTLN("[%s pin]:%llu: %.2f fps", Name, FrameCounter, *fps);
                 }
             }
+            else
+            {
+                FpsStartTime = now;
+                FpsFrameCounter = 1;
+            }
+
             PrevDts = dts;
             ++FrameCounter;
         }
         return S_OK;
+    }
+
+    std::optional<float> UpdateFps(MFTIME now)
+    {
+        constexpr const auto OneSecond = 10'000'000; // 1 second in 100ns units
+        ++FpsFrameCounter;
+        const auto clock_elapsed = now - FpsStartTime;
+        if (clock_elapsed >= OneSecond)
+        {
+            FpsStartTime = now;
+            auto fps = (FpsFrameCounter * OneSecond) / static_cast<float>(clock_elapsed);
+            FpsFrameCounter = 0;
+            return fps;
+        }
+        return std::nullopt;
+    }
+
+    static uint32_t ToMilliseconds(int64_t hundredNanosec) noexcept
+    {
+        return static_cast<uint32_t>(duration_cast<milliseconds>(winrt::TimeSpan{ hundredNanosec }).count());
     }
 
     static int32_t CalculateLostFrames(uint64_t dts, int64_t prevDts, int64_t duration) noexcept

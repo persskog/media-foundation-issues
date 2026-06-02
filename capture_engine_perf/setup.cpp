@@ -74,22 +74,22 @@ void State::OnEvent(IMFMediaEvent* event) noexcept
         else if (MF_CAPTURE_ENGINE_PREVIEW_STARTED == type)
         {
             m_previewing.store(SUCCEEDED(status));
-            PRINTLN("Preview started");
+            PRINTLN("\n<< Preview started >>\n");
         }
         else if (MF_CAPTURE_ENGINE_PREVIEW_STOPPED == type)
         {
             m_previewing.store(SUCCEEDED(status) ? false : true);
-            PRINTLN("Preview stopped");
+            PRINTLN("\n<< Preview stopped >>\n");
         }
         else if (MF_CAPTURE_ENGINE_RECORD_STARTED == type)
         {
             m_encoding.store(SUCCEEDED(status));
-            PRINTLN("Encoding started");
+            PRINTLN("\n<< Encoding started >>\n");
         }
         else if (MF_CAPTURE_ENGINE_RECORD_STOPPED == type)
         {
             m_encoding.store(SUCCEEDED(status) ? false : true);
-            PRINTLN("Encoding stopped");
+            PRINTLN("\n<< Encoding stopped >>\n");
         }
 
         if (FAILED(status))
