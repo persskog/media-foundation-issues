@@ -27,6 +27,7 @@ struct PinOutput
     uint32_t RateNum;
     uint32_t RateDen;
     FourCC   Subtype;
+    DWORD    TypeIndex;
 
     void print() const
     {

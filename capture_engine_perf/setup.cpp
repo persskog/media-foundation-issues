@@ -29,7 +29,7 @@ void State::CollectAvailableDeviceOutputs(std::vector<PinOutput>& outputs, DWORD
     const DWORD nv12_fourcc = MFVideoFormat_NV12.Data1;
     const DWORD yuy2_fourcc = MFVideoFormat_YUY2.Data1;
 
-    while (S_OK == src->GetAvailableDeviceMediaType(stream, type_index++, type.put()))
+    while (S_OK == src->GetAvailableDeviceMediaType(stream, type_index, type.put()))
     {
         GUID subtype{};
         winrt::check_hresult(type->GetGUID(MF_MT_SUBTYPE, &subtype));
@@ -37,15 +37,16 @@ void State::CollectAvailableDeviceOutputs(std::vector<PinOutput>& outputs, DWORD
         // Just collect NV12 and YUY2 for clearity...
         if (subtype.Data1 != nv12_fourcc && subtype.Data1 != yuy2_fourcc)
         {
+            ++type_index;
             continue;
         }
-
 
         auto& output = outputs.emplace_back();
         winrt::check_hresult(::MFGetAttributeSize(type.get(), MF_MT_FRAME_SIZE, &output.Width, &output.Height));
         winrt::check_hresult(::MFGetAttributeRatio(type.get(), MF_MT_FRAME_RATE, &output.RateNum, &output.RateDen));
-
         output.Subtype = FourCC(subtype.Data1);
+        output.TypeIndex = type_index;
+        ++type_index;
     }
 }
 
@@ -68,6 +69,7 @@ void State::OnEvent(IMFMediaEvent* event) noexcept
             winrt::check_hresult(sink->QueryInterface(EngineRecordSink.put()));
             winrt::check_hresult(e->GetSink(MF_CAPTURE_ENGINE_SINK_TYPE_PHOTO, sink.put()));
             winrt::check_hresult(sink->QueryInterface(EnginePhotoSink.put()));
+
             PrepareEncode();
             PreparePreview();
         }
@@ -135,7 +137,7 @@ void State::PreparePreview()
         frame_rate_den,
         static_cast<float>(frame_rate_num) / frame_rate_den);
 
-    PreviewCallback = winrt::make_self<FrameCb>("Preview");
+    PreviewCallback = winrt::make_self<FrameCb>(nullptr);
     PreviewCallback->ExpectedFrameDuration = winrt::TimeSpan{ static_cast<int64_t>(frame_duration) };
     winrt::check_hresult(EnginePreviewSink->SetSampleCallback(stream, PreviewCallback.get()));
     winrt::check_hresult(EnginePreviewSink->Prepare());
@@ -146,6 +148,28 @@ void State::PrepareEncode()
     CollectAvailableDeviceOutputs(EncodeOutputs, EncodeStream);
     winrt::com_ptr<IMFMediaType> type;
     winrt::check_hresult(EngineSource->GetCurrentDeviceMediaType(EncodeStream, type.put()));
+
+    winrt::com_ptr<IMFMediaType> previewType;
+    winrt::check_hresult(EngineSource->GetCurrentDeviceMediaType(PreviewStream, previewType.put()));
+
+    uint32_t frame_width{};
+    uint32_t frame_height{};
+    winrt::check_hresult(::MFGetAttributeSize(type.get(), MF_MT_FRAME_SIZE, &frame_width, &frame_height));
+
+    for (auto&& o : EncodeOutputs)
+    {
+        auto fps = static_cast<float>(o.RateNum) / o.RateDen;
+
+        if (o.Width == frame_width &&
+            o.Height == frame_height &&
+            fps < 60.0f)
+        {
+            winrt::check_hresult(EngineSource->GetAvailableDeviceMediaType(EncodeStream, o.TypeIndex, type.put()));
+            winrt::check_hresult(EngineSource->SetCurrentDeviceMediaType(EncodeStream, type.get()));
+            break;
+        }
+    }
+
 
     GUID subtype{};
     winrt::check_hresult(type->GetGUID(MF_MT_SUBTYPE, &subtype));
@@ -160,10 +184,6 @@ void State::PrepareEncode()
     winrt::check_hresult(::MFGetAttributeRatio(type.get(), MF_MT_FRAME_RATE, &frame_rate_num, &frame_rate_den));
     winrt::check_hresult(::MFFrameRateToAverageTimePerFrame(frame_rate_num, frame_rate_den, &frame_duration));
 
-    uint32_t frame_width{};
-    uint32_t frame_height{};
-    winrt::check_hresult(::MFGetAttributeSize(type.get(), MF_MT_FRAME_SIZE, &frame_width, &frame_height));
-
     PRINTLN("Encoding stream: (%ws), frame size %ux%u at frame rate %u/%u (%.2f)",
         fourcc.Data,
         frame_width,
@@ -172,7 +192,7 @@ void State::PrepareEncode()
         frame_rate_den,
         static_cast<float>(frame_rate_num) / frame_rate_den);
 
-    EncodeCallback = winrt::make_self<FrameCb>(nullptr);
+    EncodeCallback = winrt::make_self<FrameCb>("Capture");
     EncodeCallback->ExpectedFrameDuration = winrt::TimeSpan{ static_cast<int64_t>(frame_duration) };
     winrt::check_hresult(EngineRecordSink->SetSampleCallback(stream, EncodeCallback.get()));
     winrt::check_hresult(EngineRecordSink->Prepare());
